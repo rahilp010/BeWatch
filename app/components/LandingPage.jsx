@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import { FaFacebook, FaGithub, FaInstagram, FaLinkedin } from 'react-icons/fa6';
 
 const LandingPage = () => {
    // Animation Variants
@@ -61,14 +62,49 @@ const LandingPage = () => {
             variants={fadeUp}
             className="w-full flex items-center justify-between px-6 py-4 lg:px-16 lg:py-8 relative z-50 shrink-0">
             <div className="flex-1" />
-            <h1
+            {/* <h1
                className="text-3xl md:text-4xl lg:text-5xl tracking-wide text-[#c09a74]"
                style={{
                   fontFamily: "'Playfair Display', serif",
                   fontStyle: 'italic',
                }}>
                Do Immigration
-            </h1>
+            </h1> */}
+            <motion.div
+               initial={{ opacity: 0, y: -100 }}
+               animate={{ opacity: 1, y: 0 }}
+               transition={{
+                  type: 'spring',
+                  stiffness: 260,
+                  damping: 20,
+                  delay: 1.2,
+               }}
+               className="fixed top-8 left-1/2 z-50 -translate-x-1/2">
+               <div
+                  className={`flex items-center gap-6 rounded-full border px-8 py-4 backdrop-blur-2xl transition-all duration-500 hover:scale-105 border-[#505050] bg-white/50 text-gray-800 shadow-[0_8px_32px_0_rgba(31,38,135,0.15)]`}>
+                  <div className="flex items-center gap-8 sm:gap-10">
+                     <FaInstagram
+                        className={`h-5 w-5 cursor-pointer transition-all hover:scale-125 hover:text-[#c09a74]
+                        }`}
+                     />
+                     <FaGithub
+                        className={`h-5 w-5 cursor-pointer transition-all hover:scale-125 
+                           hover:text-[#c09a74]
+                        `}
+                     />
+                     <FaLinkedin
+                        className={`h-5 w-5 cursor-pointer transition-all hover:scale-125
+                          hover:text-[#c09a74]
+                        `}
+                     />
+                     <FaFacebook
+                        className={`h-5 w-5 cursor-pointer transition-all hover:scale-125
+                          hover:text-[#c09a74]
+                        `}
+                     />
+                  </div>
+               </div>
+            </motion.div>
             <div className="flex-1 flex justify-end">
                <button className="flex flex-col items-end space-y-1.5 lg:space-y-2 group">
                   <span className="w-8 lg:w-10 h-[2px] bg-black block transition-all duration-300 group-hover:w-10 lg:group-hover:w-12"></span>

@@ -874,6 +874,46 @@ const GalleryPage = () => {
             )}
          </AnimatePresence>
 
+         <AnimatePresence>
+            {isLoading && (
+               <motion.div
+                  initial={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[500] bg-white flex flex-col items-center justify-center">
+                  <motion.div
+                     initial={{ scale: 0.8, opacity: 0 }}
+                     animate={{ scale: 1, opacity: 1 }}
+                     className="flex flex-col items-center">
+                     <div className="relative w-24 h-24 mb-8">
+                        <motion.div
+                           animate={{ rotate: 360 }}
+                           transition={{
+                              duration: 2,
+                              repeat: Infinity,
+                              ease: 'linear',
+                           }}
+                           className="absolute inset-0 border-2 border-[#c09a74]/20 border-t-[#c09a74] rounded-full"
+                        />
+                        <div className="absolute inset-4 flex items-center justify-center">
+                           <Loader2
+                              size={32}
+                              className="text-[#c09a74] animate-spin"
+                           />
+                        </div>
+                     </div>
+                     <h2
+                        className="text-2xl font-light italic text-[#c09a74] tracking-widest"
+                        style={{ fontFamily: "'Playfair Display', serif" }}>
+                        Bewatch
+                     </h2>
+                     <p className="text-[10px] uppercase tracking-[0.4em] text-neutral-400 mt-2 font-bold">
+                        Initializing Collection
+                     </p>
+                  </motion.div>
+               </motion.div>
+            )}
+         </AnimatePresence>
+
          {/* Bento Grid */}
          <motion.div
             layout
