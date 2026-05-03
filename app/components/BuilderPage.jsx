@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
 import {
    ArrowLeft,
@@ -10,7 +10,6 @@ import {
    Bold,
    Italic,
    Underline,
-   Settings2,
    Trash2,
    Plus,
    Minus,
@@ -23,7 +22,10 @@ import jsPDF from 'jspdf';
 const BuilderPage = () => {
    const location = useLocation();
    const navigate = useNavigate();
-   const selectedImages = location.state?.selectedImages || [];
+   const selectedImages = useMemo(
+      () => location.state?.selectedImages || [],
+      [location.state?.selectedImages],
+   );
 
    const [currentStep, setCurrentStep] = useState(1);
    const [selectedTemplate, setSelectedTemplate] = useState('grid');
@@ -32,7 +34,15 @@ const BuilderPage = () => {
    const [isGenerating, setIsGenerating] = useState(false);
 
    // State for custom layout images
-   const [builderImages, setBuilderImages] = useState([]);
+   const [builderImages, setBuilderImages] = useState(() =>
+      selectedImages.map((img, idx) => ({
+         ...img,
+         x: 50 + (idx % 3) * 200,
+         y: 100 + Math.floor(idx / 3) * 250,
+         width: 250,
+         height: 250,
+      })),
+   );
 
    const catalogRef = useRef(null);
 
@@ -84,19 +94,8 @@ const BuilderPage = () => {
    useEffect(() => {
       if (selectedImages.length === 0) {
          navigate('/gallery');
-      } else {
-         // Initialize builder images with default positions for custom layout
-         setBuilderImages(
-            selectedImages.map((img, idx) => ({
-               ...img,
-               x: 50 + (idx % 3) * 200,
-               y: 100 + Math.floor(idx / 3) * 250,
-               width: 250,
-               height: 250,
-            })),
-         );
       }
-   }, [selectedImages, navigate]);
+   }, [selectedImages.length, navigate]);
 
    const addTextElement = () => {
       const newText = {
@@ -159,7 +158,7 @@ const BuilderPage = () => {
          const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-         pdf.save('bewatch-luxury-catalog.pdf');
+         pdf.save('b-watch-luxury-catalog.pdf');
       } catch (error) {
          console.error('PDF Generation failed:', error);
          alert('PDF generation failed — see console for details.');
@@ -702,7 +701,7 @@ const BuilderPage = () => {
                      <div className="absolute bottom-12 left-12 right-12 flex justify-between items-end border-t border-neutral-100 pt-8 opacity-20">
                         <div className="flex flex-col gap-1">
                            <span className="text-[8px] uppercase tracking-widest font-bold">
-                              Bewatch Luxury Catalog
+                              B-Watch Luxury Catalog
                            </span>
                            <span className="text-[6px] uppercase tracking-widest text-neutral-500">
                               Excellence in Timekeeping
@@ -711,7 +710,7 @@ const BuilderPage = () => {
                         <span
                            className="text-[10px] font-light italic"
                            style={{ fontFamily: "'Playfair Display', serif" }}>
-                           www.bewatch.luxury
+                           www.b-watch.luxury
                         </span>
                      </div>
                   </div>

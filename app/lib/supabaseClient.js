@@ -5,29 +5,41 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ─── Watches Table CRUD ───────────────────────────────────────
-export const fetchWatches = async () => {
-   const { data, error } = await supabase
+const watchSelectFields =
+   'id, model_name, brand, mrp, color, dial_color, image_url, created_at';
+
+export const fetchWatches = async ({ page = 0, pageSize } = {}) => {
+   let query = supabase
       .from('watches')
-      .select('*')
+      .select(watchSelectFields, { count: 'exact' })
       .order('created_at', { ascending: false });
 
+   if (typeof pageSize === 'number' && pageSize > 0) {
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+      query = query.range(from, to);
+   }
+
+   const { data, error, count } = await query;
+
    if (error) throw error;
-   return data;
+   return {
+      items: data ?? [],
+      count: count ?? 0,
+   };
 };
 
 export const insertWatch = async (watch) => {
    const { data, error } = await supabase
       .from('watches')
       .insert([watch])
-      .select()
+      .select(watchSelectFields)
       .single();
 
    if (error) throw error;
    return data;
 };
 
-// ─── Image Storage ────────────────────────────────────────────
 export const uploadImage = async (file) => {
    const fileExt = file.name.split('.').pop();
    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
@@ -42,7 +54,6 @@ export const uploadImage = async (file) => {
 
    if (error) throw error;
 
-   // Get public URL
    const { data } = supabase.storage
       .from('watch-images')
       .getPublicUrl(filePath);
@@ -52,10 +63,8 @@ export const uploadImage = async (file) => {
 
 export const deleteWatches = async (ids) => {
    if (!ids || ids.length === 0) return;
-   const { error } = await supabase
-      .from('watches')
-      .delete()
-      .in('id', ids);
+
+   const { error } = await supabase.from('watches').delete().in('id', ids);
 
    if (error) throw error;
    return true;
@@ -64,12 +73,9 @@ export const deleteWatches = async (ids) => {
 export const deleteImages = async (urls) => {
    if (!urls || urls.length === 0) return;
 
-   // Extract paths from URLs
-   // Format: .../storage/v1/object/public/watch-images/watches/filename.jpg
-   // We need: watches/filename.jpg
    const paths = urls
-      .filter(url => url && url.includes('watch-images/'))
-      .map(url => {
+      .filter((url) => url && url.includes('watch-images/'))
+      .map((url) => {
          const parts = url.split('watch-images/');
          return parts.length > 1 ? parts[1] : null;
       })

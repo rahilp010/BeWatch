@@ -1,24 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { Check, LayoutPanelTop, Loader2, Trash2 } from 'lucide-react';
 import {
-   Plus,
-   ArrowLeft,
-   Check,
-   LayoutPanelTop,
-   Loader2,
-   Trash2,
-} from 'lucide-react';
-import {
-   fetchWatches,
    insertWatch,
    uploadImage,
    deleteWatches,
    deleteImages,
 } from '../lib/supabaseClient';
+import { useWatches, watchesQueryKey } from '../hooks/useWatches';
 
 const GalleryPage = () => {
    const navigate = useNavigate();
+   const queryClient = useQueryClient();
+   const { data: watchData, isLoading } = useWatches();
    const [filter, setFilter] = useState('All');
    const [isModalOpen, setIsModalOpen] = useState(false);
    const [dragActive, setDragActive] = useState(false);
@@ -26,10 +22,10 @@ const GalleryPage = () => {
    const [selectedIds, setSelectedIds] = useState([]);
    const [imageFile, setImageFile] = useState(null);
    const [isSubmitting, setIsSubmitting] = useState(false);
-   const [isLoading, setIsLoading] = useState(true);
    const [isDeleting, setIsDeleting] = useState(false);
    const [notification, setNotification] = useState(null); // { type, title, message, onConfirm }
    const [isMobile, setIsMobile] = useState(false);
+   const hasHydratedWatches = useRef(false);
 
    useEffect(() => {
       const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -129,44 +125,29 @@ const GalleryPage = () => {
 
    const brands = ['All', 'Titan', 'Casio', 'Fossil', 'Seiko', 'Fastrack'];
 
-   // Fetch watches from Supabase on mount
-   useEffect(() => {
-      let isMounted = true;
-      const loadWatches = async () => {
-         try {
-            const dbWatches = await fetchWatches();
-            if (isMounted && dbWatches && dbWatches.length > 0) {
-               const mapped = dbWatches.map((w) => ({
-                  id: w.id,
-                  src: w.image_url,
-                  alt: w.model_name,
-                  brand: w.brand,
-                  mrp: w.mrp,
-                  color: w.color,
-                  dialColor: w.dial_color,
-                  className: 'md:col-span-1 md:row-span-1',
-               }));
+  useEffect(() => {
+      if (!watchData?.items) return;
+      if (hasHydratedWatches.current) return;
+      hasHydratedWatches.current = true;
 
-               setImages((prev) => {
-                  // Filter out any items from mapped that are already in prev
-                  const existingIds = new Set(prev.map((img) => img.id));
-                  const newUniqueItems = mapped.filter(
-                     (img) => !existingIds.has(img.id),
-                  );
-                  return [...newUniqueItems, ...prev];
-               });
-            }
-         } catch (err) {
-            console.error('Failed to fetch watches:', err);
-         } finally {
-            if (isMounted) setIsLoading(false);
-         }
-      };
-      loadWatches();
-      return () => {
-         isMounted = false;
-      };
-   }, []);
+      const mapped = watchData.items.map((w) => ({
+         id: w.id,
+         src: w.image_url,
+         alt: w.model_name,
+         brand: w.brand,
+         mrp: w.mrp,
+         color: w.color,
+         dialColor: w.dial_color,
+         className: 'md:col-span-1 md:row-span-1',
+      }));
+
+      setImages((prev) => {
+         const staticItems = prev.filter(
+            (img) => typeof img.id === 'string' && img.id.startsWith('static-'),
+         );
+         return [...mapped, ...staticItems];
+      });
+   }, [watchData]);
 
    const handleInputChange = (e) => {
       const { name, value } = e.target;
@@ -214,7 +195,8 @@ const GalleryPage = () => {
    const handleSubmit = async (e) => {
       e.preventDefault();
 
-      // OPTIMISTIC UI: Create a temporary item to show immediately
+      setIsSubmitting(true);
+
       const tempId = `temp-${Date.now()}`;
       const optimisticWatch = {
          id: tempId,
@@ -223,19 +205,32 @@ const GalleryPage = () => {
             'https://images.unsplash.com/photo-1522338242992-e1a54906a8da?q=80&w=800&auto=format&fit=crop',
          alt: formData.modelName,
          brand: formData.brand,
+         mrp: Number(formData.mrp) || 0,
+         color: formData.color,
+         dialColor: formData.dialColor,
          className: 'md:col-span-1 md:row-span-1',
-         isSyncing: true, // Visual indicator that it's saving
+         isSyncing: true,
       };
 
-      // Add to UI immediately
+      const previousCache = queryClient.getQueryData(watchesQueryKey);
+
+      queryClient.setQueryData(watchesQueryKey, (current) => {
+         const items = current?.items ?? [];
+         const nextItems = [optimisticWatch, ...items.filter((item) => item.id !== tempId)];
+         return {
+            items: nextItems,
+            count: (current?.count ?? 0) + 1,
+         };
+      });
+
       setImages((prev) => [optimisticWatch, ...prev]);
+      setSelectionMode(false);
+      setSelectedIds([]);
       setIsModalOpen(false);
 
-      // Capture current form state for background processing
       const currentFormData = { ...formData };
       const currentImageFile = imageFile;
 
-      // Reset form immediately
       setFormData({
          modelName: '',
          brand: 'Titan',
@@ -246,7 +241,6 @@ const GalleryPage = () => {
       });
       setImageFile(null);
 
-      // Background sync with Supabase
       try {
          let imageUrl = currentFormData.image;
          if (currentImageFile) {
@@ -262,7 +256,29 @@ const GalleryPage = () => {
             image_url: imageUrl || optimisticWatch.src,
          });
 
-         // Update the optimistic item with real data
+         queryClient.setQueryData(watchesQueryKey, (current) => {
+            if (!current) return current;
+            const items = current.items ?? [];
+            return {
+               ...current,
+               items: items.map((img) =>
+                  img.id === tempId
+                     ? {
+                          ...img,
+                          id: dbWatch.id,
+                          src: dbWatch.image_url,
+                          alt: dbWatch.model_name,
+                          brand: dbWatch.brand,
+                          mrp: dbWatch.mrp,
+                          color: dbWatch.color,
+                          dialColor: dbWatch.dial_color,
+                          isSyncing: false,
+                       }
+                     : img,
+               ),
+            };
+         });
+
          setImages((prev) =>
             prev.map((img) =>
                img.id === tempId
@@ -270,6 +286,11 @@ const GalleryPage = () => {
                        ...img,
                        id: dbWatch.id,
                        src: dbWatch.image_url,
+                       alt: dbWatch.model_name,
+                       brand: dbWatch.brand,
+                       mrp: dbWatch.mrp,
+                       color: dbWatch.color,
+                       dialColor: dbWatch.dial_color,
                        isSyncing: false,
                     }
                   : img,
@@ -277,6 +298,9 @@ const GalleryPage = () => {
          );
       } catch (err) {
          console.error('Failed to sync watch with Supabase:', err);
+         if (previousCache) {
+            queryClient.setQueryData(watchesQueryKey, previousCache);
+         }
          setImages((prev) => prev.filter((img) => img.id !== tempId));
          setNotification({
             type: 'error',
@@ -284,6 +308,8 @@ const GalleryPage = () => {
             message:
                'Failed to save watch to cloud. It has been removed from the session.',
          });
+      } finally {
+         setIsSubmitting(false);
       }
    };
 
@@ -347,6 +373,23 @@ const GalleryPage = () => {
          onConfirm: async () => {
             setNotification(null);
             setIsDeleting(true);
+            const previousCache = queryClient.getQueryData(watchesQueryKey);
+            const previousImages = images;
+
+            queryClient.setQueryData(watchesQueryKey, (current) => {
+               if (!current) return current;
+               const items = current.items ?? [];
+               const removedCount = items.filter((item) =>
+                  ids.includes(item.id),
+               ).length;
+               return {
+                  ...current,
+                  items: items.filter((item) => !ids.includes(item.id)),
+                  count: Math.max(0, (current.count ?? 0) - removedCount),
+               };
+            });
+
+            setImages((prev) => prev.filter((img) => !ids.includes(img.id)));
             try {
                const itemsToDelete = images.filter((img) =>
                   ids.includes(img.id),
@@ -365,7 +408,6 @@ const GalleryPage = () => {
                   await deleteWatches(dbIds);
                }
 
-               setImages((prev) => prev.filter((img) => !ids.includes(img.id)));
                setSelectedIds((prev) => prev.filter((id) => !ids.includes(id)));
 
                if (selectedIds.length <= ids.length) {
@@ -380,13 +422,22 @@ const GalleryPage = () => {
                });
             } catch (err) {
                console.error('Failed to delete watches:', err);
+               if (previousCache) {
+                  queryClient.setQueryData(watchesQueryKey, previousCache);
+               }
+               setImages((prev) => {
+                  const existingIds = new Set(prev.map((img) => img.id));
+                  const restored = previousImages.filter(
+                     (img) => ids.includes(img.id) && !existingIds.has(img.id),
+                  );
+                  return [...restored, ...prev];
+               });
                setNotification({
                   type: 'error',
                   title: 'Deletion Failed',
                   message:
                      'Could not remove items from the cloud. They have been hidden from view only.',
                });
-               setImages((prev) => prev.filter((img) => !ids.includes(img.id)));
             } finally {
                setIsDeleting(false);
             }
@@ -956,7 +1007,7 @@ const GalleryPage = () => {
                      <h2
                         className="text-2xl font-light italic text-[#c09a74] tracking-widest"
                         style={{ fontFamily: "'Playfair Display', serif" }}>
-                        Bewatch
+                        B-Watch
                      </h2>
                      <p className="text-[10px] uppercase tracking-[0.4em] text-neutral-400 mt-2 font-bold">
                         Initializing Collection
@@ -1063,7 +1114,7 @@ const GalleryPage = () => {
                Luxury Timepieces
             </p>
             <div className="text-[#505050]/40 uppercase tracking-[1em] text-[12px]">
-               Bewatch © 2026
+               B-Watch © 2026
             </div>
          </motion.div>
       </div>

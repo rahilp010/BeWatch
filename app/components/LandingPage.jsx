@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { FaFacebook, FaGithub, FaInstagram, FaLinkedin } from 'react-icons/fa6';
@@ -172,28 +172,28 @@ const LandingPage = () => {
                variants={staggerContainer}
                className="w-full h-1/2 lg:w-[35%] lg:h-full flex items-center justify-center lg:justify-start relative z-30 mt-4 lg:mt-0">
                {/* Vertical Black Button */}
-                <motion.button
-                   variants={fadeUp}
-                   whileHover={{ scale: 1.05 }}
-                   whileTap={{ scale: 0.95 }}
-                   className="absolute left-4 lg:left-5 bg-[#505050] text-[#c09a74] px-1.5 py-4 lg:px-3 lg:py-7 uppercase tracking-[0.6em] md:tracking-[0.9em] text-[8px] md:text-sm z-40 hover:bg-[#c09a74] hover:text-[#505050] transition-all duration-300 font-extrabold"
-                   style={{
-                      writingMode: 'vertical-rl',
-                      transform: 'rotate(180deg)',
-                      textOrientation: 'upright',
-                   }}>
-                   BeWatch
-                </motion.button>
+               <motion.button
+                  variants={fadeUp}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className="absolute left-4 lg:left-5 bg-[#505050] text-[#c09a74] px-1.5 py-4 lg:px-3 lg:py-7 uppercase tracking-[0.9em] text-sm z-40 hover:bg-[#c09a74] hover:text-[#505050] transition-all duration-300 font-extrabold"
+                  style={{
+                     writingMode: 'vertical-rl',
+                     transform: 'rotate(180deg)',
+                     textOrientation: 'upright',
+                  }}>
+                  BWatch
+               </motion.button>
 
                {/* Text Content - Scaled down for mobile fit */}
-                <div className="absolute right-8 md:right-20 ">
-                   <motion.h2
-                      variants={fadeUp}
-                      className="text-2xl md:text-2xl lg:text-3xl font-bold uppercase tracking-[0.2em] leading-snug text-[#c09a74] mb-3 lg:mb-6">
-                      Images
-                      <br />
-                      Gallery
-                   </motion.h2>
+               <div className="absolute right-8 md:right-20 ">
+                  <motion.h2
+                     variants={fadeUp}
+                     className="text-2xl md:text-2xl lg:text-3xl font-bold uppercase tracking-[0.2em] leading-snug text-[#c09a74] mb-3 lg:mb-6">
+                     Images
+                     <br />
+                     Gallery
+                  </motion.h2>
 
                   <motion.p
                      variants={fadeUp}
