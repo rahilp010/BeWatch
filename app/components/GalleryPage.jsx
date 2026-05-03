@@ -29,6 +29,14 @@ const GalleryPage = () => {
    const [isLoading, setIsLoading] = useState(true);
    const [isDeleting, setIsDeleting] = useState(false);
    const [notification, setNotification] = useState(null); // { type, title, message, onConfirm }
+   const [isMobile, setIsMobile] = useState(false);
+
+   useEffect(() => {
+      const checkMobile = () => setIsMobile(window.innerWidth < 768);
+      checkMobile();
+      window.addEventListener('resize', checkMobile);
+      return () => window.removeEventListener('resize', checkMobile);
+   }, []);
 
    const [formData, setFormData] = useState({
       modelName: '',
@@ -287,8 +295,28 @@ const GalleryPage = () => {
    };
 
    const handleDoubleClick = (id) => {
+      if (selectionMode) return;
       setSelectionMode(true);
       setSelectedIds([id]);
+   };
+
+   // Long press for mobile
+   const [longPressTimer, setLongPressTimer] = useState(null);
+   const handleTouchStart = (id) => {
+      if (selectionMode) return;
+      const timer = setTimeout(() => {
+         setSelectionMode(true);
+         setSelectedIds([id]);
+         if (navigator.vibrate) navigator.vibrate(50);
+      }, 600);
+      setLongPressTimer(timer);
+   };
+
+   const handleTouchEnd = () => {
+      if (longPressTimer) {
+         clearTimeout(longPressTimer);
+         setLongPressTimer(null);
+      }
    };
 
    const exitSelectionMode = () => {
@@ -398,27 +426,35 @@ const GalleryPage = () => {
                   <span className="text-xl group-hover:-translate-x-1 transition-transform duration-300">
                      ←
                   </span>
-                  <span className="uppercase tracking-widest text-sm font-bold">
-                     Back to Home
+                  <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
+                     Back
                   </span>
                </Link>
+
+               {!selectionMode && (
+                  <button
+                     onClick={() => setSelectionMode(true)}
+                     className="text-[10px] md:text-xs uppercase tracking-widest font-bold text-[#c09a74] hover:opacity-70 transition-opacity">
+                     Select
+                  </button>
+               )}
 
                {selectionMode && (
                   <button
                      onClick={exitSelectionMode}
-                     className="text-xs uppercase tracking-widest font-bold text-red-500 hover:text-red-600 transition-colors">
-                     Cancel Selection ({selectedIds.length})
+                     className="text-[10px] md:text-xs uppercase tracking-widest font-bold text-red-500 hover:text-red-600 transition-colors">
+                     Cancel ({selectedIds.length})
                   </button>
                )}
             </div>
 
             <button
                onClick={() => setIsModalOpen(true)}
-               className="flex items-center space-x-2 px-5 py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400">
+               className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400">
                <span className="text-lg font-light transition-transform duration-300 group-hover:rotate-90">
                   +
                </span>
-               <span className="uppercase tracking-widest text-sm font-bold">
+               <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
                   Add Watch
                </span>
             </button>
@@ -429,14 +465,14 @@ const GalleryPage = () => {
             <motion.div
                initial={{ opacity: 0, x: -20 }}
                animate={{ opacity: 1, x: 0 }}
-               className="w-full md:w-auto flex items-end relative">
+               className="w-full md:w-auto flex flex-col md:flex-row md:items-end relative">
                <h1
-                  className="text-5xl lg:text-7xl tracking-tight font-light italic text-[#c09a74]"
+                  className="text-4xl md:text-5xl lg:text-7xl tracking-tight font-light italic text-[#c09a74]"
                   style={{ fontFamily: "'Playfair Display', serif" }}>
-                  {selectionMode ? 'Select Timepieces' : 'Watch Gallery'}
+                  {selectionMode ? 'Select Items' : 'Watch Gallery'}
                </h1>
-               <p className="text-[#c09a74] text-sm tracking-[0.3em] font-bold mt-2 absolute left-4 -bottom-5">
-                  Double click to select watches
+               <p className="text-[#c09a74] text-[10px] md:text-sm tracking-[0.2em] md:tracking-[0.3em] font-bold mt-1 md:mt-2 md:absolute md:left-4 md:-bottom-5 opacity-60">
+                  {isMobile ? 'Long press to select' : 'Double click to select'}
                </p>
             </motion.div>
 
@@ -448,7 +484,7 @@ const GalleryPage = () => {
                   <button
                      key={brand}
                      onClick={() => setFilter(brand)}
-                     className={`px-6 py-2 rounded-full text-xs uppercase tracking-widest font-bold transition-all duration-300 ${
+                     className={`px-4 py-1.5 md:px-6 md:py-2 rounded-full text-[10px] md:text-xs uppercase tracking-widest font-bold transition-all duration-300 ${
                         filter === brand
                            ? 'bg-[#c09a74] text-white shadow-lg'
                            : 'bg-transparent text-[#505050] border border-[#505050]/20 hover:border-[#c09a74] hover:text-[#c09a74]'
@@ -466,21 +502,37 @@ const GalleryPage = () => {
                   initial={{ y: 100, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                   exit={{ y: 100, opacity: 0 }}
-                  className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] bg-black text-white px-8 py-4 rounded-full shadow-2xl flex items-center gap-8 backdrop-blur-md bg-black/90 border border-white/10">
-                  <div className="flex flex-col">
-                     <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-white/50">
-                        Selected
-                     </span>
-                     <span
-                        className="text-lg font-light italic"
-                        style={{ fontFamily: "'Playfair Display', serif" }}>
-                        {selectedIds.length}{' '}
-                        {selectedIds.length === 1 ? 'Timepiece' : 'Timepieces'}
-                     </span>
+                  className="fixed bottom-6 md:bottom-10 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[200] bg-black/90 text-white px-6 py-4 md:px-8 md:py-4 rounded-3xl md:rounded-full shadow-2xl flex flex-col md:flex-row items-center gap-4 md:gap-8 backdrop-blur-md border border-white/10">
+                  <div className="flex items-center gap-4 w-full md:w-auto justify-between">
+                     <div className="flex flex-col">
+                        <span className="text-[8px] md:text-[10px] uppercase tracking-[0.2em] font-bold text-white/50">
+                           Selected
+                        </span>
+                        <span
+                           className="text-sm md:text-lg font-light italic"
+                           style={{ fontFamily: "'Playfair Display', serif" }}>
+                           {selectedIds.length}{' '}
+                           {selectedIds.length === 1 ? 'Item' : 'Items'}
+                        </span>
+                     </div>
+                     <div className="md:hidden flex gap-2">
+                        <button
+                           onClick={() => handleDelete(selectedIds)}
+                           disabled={isDeleting}
+                           className="p-2 rounded-full bg-red-500/20 text-red-500">
+                           <Trash2 size={18} />
+                        </button>
+                        <button
+                           onClick={handleCreateCatalog}
+                           className="p-2 rounded-full bg-[#c09a74] text-white">
+                           <LayoutPanelTop size={18} />
+                        </button>
+                     </div>
                   </div>
-                  <div className="h-8 w-[1px] bg-white/20" />
 
-                  <div className="flex items-center gap-3">
+                  <div className="hidden md:block h-8 w-[1px] bg-white/20" />
+
+                  <div className="hidden md:flex items-center gap-3">
                      <button
                         onClick={() => handleDelete(selectedIds)}
                         disabled={isDeleting}
@@ -935,6 +987,8 @@ const GalleryPage = () => {
                            ? handleDelete(image.id)
                            : handleDoubleClick(image.id)
                      }
+                     onTouchStart={() => handleTouchStart(image.id)}
+                     onTouchEnd={handleTouchEnd}
                      onClick={() => toggleSelection(image.id)}
                      className={`relative overflow-hidden rounded-3xl group shadow-sm hover:shadow-2xl transition-all duration-500 cursor-pointer ${image.className} ${
                         selectedIds.includes(image.id)

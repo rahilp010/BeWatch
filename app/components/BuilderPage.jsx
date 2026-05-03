@@ -276,39 +276,39 @@ const BuilderPage = () => {
       <div className="min-h-screen bg-[#fafafa] text-black font-sans">
          {/* Navigation Bar */}
          <nav className="bg-white border-b border-neutral-200 px-6 py-4 flex items-center justify-between sticky top-0 z-[100]">
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-4 md:gap-6">
                <Link
                   to="/gallery"
                   className="text-neutral-500 hover:text-black transition-colors">
-                  <ArrowLeft size={20} />
+                  <ArrowLeft size={18} md:size={20} />
                </Link>
                <h1
-                  className="text-xl font-light tracking-tight italic text-[#c09a74]"
+                  className="text-lg md:text-xl font-light tracking-tight italic text-[#c09a74]"
                   style={{ fontFamily: "'Playfair Display', serif" }}>
-                  Catalog Builder
+                  Builder
                </h1>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
                {currentStep > 1 && (
                   <button
                      onClick={() => setCurrentStep(currentStep - 1)}
-                     className="px-6 py-2 rounded-full border border-neutral-200 text-xs font-bold uppercase tracking-widest hover:bg-neutral-50 transition-all">
+                     className="px-4 py-2 md:px-6 md:py-2 rounded-full border border-neutral-200 text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-neutral-50 transition-all">
                      Back
                   </button>
                )}
                {currentStep < 3 ? (
                   <button
                      onClick={() => setCurrentStep(currentStep + 1)}
-                     className="px-8 py-2 rounded-full bg-black text-white text-xs font-bold uppercase tracking-widest hover:bg-[#c09a74] transition-all shadow-lg flex items-center gap-2">
-                     Next Step <ChevronRight size={14} />
+                     className="px-6 py-2 md:px-8 md:py-2 rounded-full bg-black text-white text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-[#c09a74] transition-all shadow-lg flex items-center gap-2">
+                     Next <ChevronRight size={14} className="hidden md:block" />
                   </button>
                ) : (
                   <button
                      onClick={handleGeneratePDF}
                      disabled={isGenerating}
-                     className="px-8 py-2 rounded-full bg-[#c09a74] text-white text-xs font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg flex items-center gap-2 disabled:opacity-50">
-                     {isGenerating ? 'Generating...' : 'Export PDF'}
+                     className="px-6 py-2 md:px-8 md:py-2 rounded-full bg-[#c09a74] text-white text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg flex items-center gap-2 disabled:opacity-50">
+                     {isGenerating ? 'Wait...' : 'Export'}
                   </button>
                )}
             </div>
@@ -333,20 +333,20 @@ const BuilderPage = () => {
                         key={step.id}
                         className="relative z-10 flex flex-col items-center gap-3">
                         <div
-                           className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-500 border-2 ${
+                           className={`w-8 h-8 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all duration-500 border-2 ${
                               currentStep >= step.id
                                  ? 'bg-[#c09a74] border-[#c09a74] text-white shadow-xl scale-110'
                                  : 'bg-white border-neutral-200 text-neutral-400'
                            }`}>
-                           <StepIcon size={20} />
+                           <StepIcon size={16} md:size={20} />
                         </div>
                         <span
-                           className={`text-[10px] uppercase tracking-[0.2em] font-bold ${
+                           className={`text-[8px] md:text-[10px] uppercase tracking-[0.1em] md:tracking-[0.2em] font-bold ${
                               currentStep >= step.id
                                  ? 'text-[#c09a74]'
                                  : 'text-neutral-400'
                            }`}>
-                           {step.name}
+                           {step.name.split(' ')[0]}
                         </span>
                      </div>
                   );
@@ -645,7 +645,7 @@ const BuilderPage = () => {
                <div className="lg:col-span-8">
                   <div
                      id="catalog-canvas"
-                     className="bg-white rounded-[2.5rem] shadow-2xl p-4 md:p-8 border border-neutral-200 min-h-[1123px] relative overflow-hidden"
+                     className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-2xl p-3 md:p-8 border border-neutral-200 min-h-[500px] md:min-h-[1123px] relative overflow-hidden"
                      ref={catalogRef}>
                      {/* Background Decoration */}
                      {/* <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
