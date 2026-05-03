@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, LayoutPanelTop, Loader2, Trash2 } from 'lucide-react';
+import { Check, LayoutPanelTop, Loader2, Trash2, Layout } from 'lucide-react';
 import {
    insertWatch,
    uploadImage,
@@ -10,6 +10,10 @@ import {
    deleteImages,
 } from '../lib/supabaseClient';
 import { useWatches, watchesQueryKey } from '../hooks/useWatches';
+import { useBrands, brandsQueryKey } from '../hooks/useBrands';
+import { insertBrand, uploadBrandLogo } from '../lib/supabaseClient';
+import TemplateCreator from './TemplateCreator';
+import { Plus, X as XIcon, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 
 const GalleryPage = () => {
    const navigate = useNavigate();
@@ -17,11 +21,19 @@ const GalleryPage = () => {
    const { data: watchData, isLoading } = useWatches();
    const [filter, setFilter] = useState('All');
    const [isModalOpen, setIsModalOpen] = useState(false);
+   const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
+
+   const { data: brandsData, isLoading: isLoadingBrands, refetch: refetchBrands } = useBrands({
+      enabled: isModalOpen || isBrandModalOpen
+   });
+   const [isTemplateCreatorOpen, setIsTemplateCreatorOpen] = useState(false);
    const [dragActive, setDragActive] = useState(false);
    const [selectionMode, setSelectionMode] = useState(false);
    const [selectedIds, setSelectedIds] = useState([]);
    const [imageFile, setImageFile] = useState(null);
+   const [brandLogoFile, setBrandLogoFile] = useState(null);
    const [isSubmitting, setIsSubmitting] = useState(false);
+   const [isAddingBrand, setIsAddingBrand] = useState(false);
    const [isDeleting, setIsDeleting] = useState(false);
    const [notification, setNotification] = useState(null); // { type, title, message, onConfirm }
    const [isMobile, setIsMobile] = useState(false);
@@ -123,7 +135,24 @@ const GalleryPage = () => {
       },
    ]);
 
-   const brands = ['All', 'Titan', 'Casio', 'Fossil', 'Seiko', 'Fastrack'];
+   const [brandFormData, setBrandFormData] = useState({
+      name: '',
+      logoUrl: '',
+   });
+
+   const availableBrands = useMemo(() => {
+      // Get unique brands from current images
+      const brandsInGallery = images.map((img) => img.brand).filter(Boolean);
+      // Get unique brands from the brands table
+      const brandsInDb = (brandsData || []).map((b) => b.name);
+
+      // Combine and remove duplicates
+      const uniqueBrands = Array.from(
+         new Set([...brandsInGallery, ...brandsInDb]),
+      ).sort();
+
+      return ['All', ...uniqueBrands];
+   }, [images, brandsData]);
 
   useEffect(() => {
       if (!watchData?.items) return;
@@ -313,6 +342,46 @@ const GalleryPage = () => {
       }
    };
 
+   const handleBrandSubmit = async (e) => {
+      e.preventDefault();
+      if (!brandFormData.name) return;
+
+      setIsAddingBrand(true);
+      try {
+         let logoUrl = brandFormData.logoUrl;
+         if (brandLogoFile) {
+            logoUrl = await uploadBrandLogo(brandLogoFile);
+         }
+
+         await insertBrand({
+            name: brandFormData.name,
+            logo_url: logoUrl,
+         });
+
+         setBrandFormData({ name: '', logoUrl: '' });
+         setBrandLogoFile(null);
+         
+         setNotification({
+            type: 'success',
+            title: 'Brand Added',
+            message: `"${brandFormData.name}" has been successfully added to your brands.`,
+            onAcknowledge: () => {
+               queryClient.invalidateQueries({ queryKey: brandsQueryKey });
+            }
+         });
+         // Don't close modal, let user add more or see the list
+      } catch (err) {
+         console.error('Failed to add brand:', err);
+         setNotification({
+            type: 'error',
+            title: 'Failed to Add Brand',
+            message: 'An error occurred while saving the brand. It might already exist.',
+         });
+      } finally {
+         setIsAddingBrand(false);
+      }
+   };
+
    const toggleSelection = (id) => {
       if (!selectionMode) return;
       setSelectedIds((prev) =>
@@ -348,6 +417,16 @@ const GalleryPage = () => {
    const exitSelectionMode = () => {
       setSelectionMode(false);
       setSelectedIds([]);
+   };
+
+   const handleSaveTemplate = (newTemplate) => {
+      const savedTemplates = JSON.parse(localStorage.getItem('custom-templates') || '[]');
+      localStorage.setItem('custom-templates', JSON.stringify([...savedTemplates, newTemplate]));
+      setNotification({
+         type: 'success',
+         title: 'Template Saved',
+         message: `"${newTemplate.name}" has been added to your catalog builder.`,
+      });
    };
 
    const handleCreateCatalog = () => {
@@ -446,7 +525,9 @@ const GalleryPage = () => {
    };
 
    const filteredImages =
-      filter === 'All' ? images : images.filter((img) => img.brand === filter);
+      filter === 'All'
+         ? images
+         : images.filter((img) => img.brand === filter);
 
    const containerVariants = {
       hidden: { opacity: 0 },
@@ -499,17 +580,39 @@ const GalleryPage = () => {
                )}
             </div>
 
-            <button
-               onClick={() => setIsModalOpen(true)}
-               className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400">
-               <span className="text-lg font-light transition-transform duration-300 group-hover:rotate-90">
-                  +
-               </span>
-               <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
-                  Add Watch
-               </span>
-            </button>
+            <div className="flex items-center gap-4">
+               {!selectionMode && (
+                  <button
+                     onClick={() => setIsTemplateCreatorOpen(true)}
+                     className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400 group"
+                  >
+                     <span className="text-lg font-light transition-transform duration-300 group-hover:scale-110">
+                        <Layout size={18} />
+                     </span>
+                     <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
+                        Add Templates
+                     </span>
+                  </button>
+               )}
+
+               <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400">
+                  <span className="text-lg font-light transition-transform duration-300 group-hover:rotate-90">
+                     +
+                  </span>
+                  <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
+                     Add Watch
+                  </span>
+               </button>
+            </div>
          </motion.div>
+
+         <TemplateCreator 
+            isOpen={isTemplateCreatorOpen} 
+            onClose={() => setIsTemplateCreatorOpen(false)}
+            onSave={handleSaveTemplate}
+         />
 
          {/* Title & Filters Row */}
          <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-8">
@@ -531,7 +634,7 @@ const GalleryPage = () => {
                initial={{ opacity: 0, y: 20 }}
                animate={{ opacity: 1, y: 0 }}
                className="flex flex-wrap gap-3">
-               {brands.map((brand) => (
+               {availableBrands.map((brand) => (
                   <button
                      key={brand}
                      onClick={() => setFilter(brand)}
@@ -728,7 +831,12 @@ const GalleryPage = () => {
                                        </>
                                     ) : (
                                        <button
-                                          onClick={() => setNotification(null)}
+                                          onClick={() => {
+                                             if (notification.onAcknowledge) {
+                                                notification.onAcknowledge();
+                                             }
+                                             setNotification(null);
+                                          }}
                                           className="w-full px-6 py-3.5 rounded-xl bg-black text-white text-[14px] font-bold uppercase tracking-[0.2em] hover:bg-[#c09a74] transition-all duration-300 shadow-xl hover:shadow-2xl">
                                           Acknowledge
                                        </button>
@@ -802,22 +910,40 @@ const GalleryPage = () => {
                                     />
                                  </div>
                                  <div className="space-y-2">
-                                    <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
-                                       Brand
-                                    </label>
-                                    <select
-                                       name="brand"
-                                       value={formData.brand}
-                                       onChange={handleInputChange}
-                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm appearance-none">
-                                       {brands
-                                          .filter((b) => b !== 'All')
-                                          .map((brand) => (
-                                             <option key={brand} value={brand}>
-                                                {brand}
-                                             </option>
-                                          ))}
-                                    </select>
+                                    <div className="flex items-center justify-between">
+                                       <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
+                                          Brand
+                                       </label>
+                                       <button
+                                          type="button"
+                                          onClick={() => setIsBrandModalOpen(true)}
+                                          className="text-[#c09a74] hover:scale-110 transition-transform"
+                                          title="Add New Brand"
+                                       >
+                                          <Plus size={16} strokeWidth={3} />
+                                       </button>
+                                    </div>
+                                    <div className="relative">
+                                       <select
+                                          name="brand"
+                                          value={formData.brand}
+                                          onChange={handleInputChange}
+                                          className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm appearance-none cursor-pointer">
+                                          <option value="" disabled>Select Brand</option>
+                                          {availableBrands
+                                             .filter((b) => b !== 'All')
+                                             .map((brand) => (
+                                                <option key={brand} value={brand}>
+                                                   {brand}
+                                                </option>
+                                             ))}
+                                       </select>
+                                       <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-400">
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                          </svg>
+                                       </div>
+                                    </div>
                                  </div>
                                  <div className="space-y-2">
                                     <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
@@ -1117,6 +1243,143 @@ const GalleryPage = () => {
                B-Watch © 2026
             </div>
          </motion.div>
+
+         <AnimatePresence>
+            {isBrandModalOpen && (
+               <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                  <motion.div
+                     initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                     animate={{ scale: 1, opacity: 1, y: 0 }}
+                     exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                     className="bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col md:flex-row">
+                     {/* Brand Form */}
+                     <div className="flex-1 p-8 md:p-12 overflow-y-auto border-b md:border-b-0 md:border-r border-neutral-100">
+                        <div className="flex items-center justify-between mb-8">
+                           <h2
+                              className="text-2xl font-light italic text-[#c09a74]"
+                              style={{ fontFamily: "'Playfair Display', serif" }}>
+                              Manage Brands
+                           </h2>
+                           <button
+                              onClick={() => setIsBrandModalOpen(false)}
+                              className="md:hidden text-neutral-400">
+                              <XIcon />
+                           </button>
+                        </div>
+
+                        <form onSubmit={handleBrandSubmit} className="space-y-6">
+                           <div className="space-y-2">
+                              <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                 Brand Name
+                              </label>
+                              <input
+                                 required
+                                 type="text"
+                                 value={brandFormData.name}
+                                 onChange={(e) =>
+                                    setBrandFormData({
+                                       ...brandFormData,
+                                       name: e.target.value,
+                                    })
+                                 }
+                                 placeholder="e.g. Rolex"
+                                 className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
+                              />
+                           </div>
+
+                           <div className="space-y-2">
+                              <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                 Brand Logo URL (Optional)
+                              </label>
+                              <input
+                                 type="url"
+                                 value={brandFormData.logoUrl}
+                                 onChange={(e) =>
+                                    setBrandFormData({
+                                       ...brandFormData,
+                                       logoUrl: e.target.value,
+                                    })
+                                 }
+                                 placeholder="https://..."
+                                 className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
+                              />
+                           </div>
+
+                           <div className="pt-4">
+                              <button
+                                 type="submit"
+                                 disabled={isAddingBrand}
+                                 className="w-full bg-black text-white py-4 rounded-xl uppercase tracking-widest text-xs font-bold hover:bg-[#c09a74] transition-all flex items-center justify-center gap-3 disabled:opacity-50">
+                                 {isAddingBrand ? (
+                                    <Loader2 size={16} className="animate-spin" />
+                                 ) : (
+                                    'Create New Brand'
+                                 )}
+                              </button>
+                           </div>
+                        </form>
+                     </div>
+
+                     {/* Brands List */}
+                     <div className="w-full md:w-[40%] bg-neutral-50 p-8 flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between mb-6">
+                           <h3 className="text-[10px] uppercase tracking-[0.2em] font-bold text-neutral-400">
+                              Existing Brands
+                           </h3>
+                           <button
+                              onClick={() => setIsBrandModalOpen(false)}
+                              className="hidden md:block text-neutral-400 hover:text-black transition-colors">
+                              <Plus className="rotate-45" size={24} />
+                           </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                           {isLoadingBrands ? (
+                              <div className="flex justify-center py-12">
+                                 <Loader2 className="animate-spin text-neutral-300" />
+                              </div>
+                           ) : brandsData?.length === 0 ? (
+                              <div className="text-center py-12 text-xs text-neutral-400 italic">
+                                 No brands created yet
+                              </div>
+                           ) : (
+                              brandsData?.map((brand) => (
+                                 <div
+                                    key={brand.id}
+                                    className="bg-white p-4 rounded-2xl border border-neutral-100 flex items-center justify-between group hover:border-[#c09a74]/30 transition-colors shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                       {brand.logo_url ? (
+                                          <img
+                                             src={brand.logo_url}
+                                             alt={brand.name}
+                                             className="w-8 h-8 rounded-lg object-contain bg-neutral-50"
+                                          />
+                                       ) : (
+                                          <div className="w-8 h-8 rounded-lg bg-[#c09a74]/10 flex items-center justify-center text-[#c09a74]">
+                                             <ImageIcon size={14} />
+                                          </div>
+                                       )}
+                                       <span className="text-sm font-bold">
+                                          {brand.name}
+                                       </span>
+                                    </div>
+                                    <CheckCircle2
+                                       size={16}
+                                       className="text-[#c09a74] opacity-0 group-hover:opacity-100 transition-opacity"
+                                    />
+                                 </div>
+                              ))
+                           )}
+                        </div>
+                     </div>
+                  </motion.div>
+               </motion.div>
+            )}
+         </AnimatePresence>
       </div>
    );
 };

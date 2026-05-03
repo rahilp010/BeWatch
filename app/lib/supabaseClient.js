@@ -90,3 +90,47 @@ export const deleteImages = async (urls) => {
    if (error) throw error;
    return true;
 };
+
+// --- Brand Management ---
+
+export const fetchBrands = async () => {
+   const { data, error } = await supabase
+      .from('brands')
+      .select('id, name, logo_url, created_at')
+      .order('name', { ascending: true });
+
+   if (error) throw error;
+   return data ?? [];
+};
+
+export const insertBrand = async (brand) => {
+   const { data, error } = await supabase
+      .from('brands')
+      .insert([brand])
+      .select()
+      .single();
+
+   if (error) throw error;
+   return data;
+};
+
+export const uploadBrandLogo = async (file) => {
+   const fileExt = file.name.split('.').pop();
+   const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
+   const filePath = `logos/${fileName}`;
+
+   const { error } = await supabase.storage
+      .from('brand-logos')
+      .upload(filePath, file, {
+         cacheControl: '3600',
+         upsert: false,
+      });
+
+   if (error) throw error;
+
+   const { data } = supabase.storage
+      .from('brand-logos')
+      .getPublicUrl(filePath);
+
+   return data.publicUrl;
+};

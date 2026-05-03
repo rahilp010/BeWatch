@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { useWatches } from '../hooks/useWatches';
 import {
    ArrowLeft,
    ChevronRight,
@@ -8,16 +9,23 @@ import {
    Layout,
    FileDown,
    Bold,
+   Check,
    Italic,
    Underline,
    Trash2,
    Plus,
    Minus,
    Palette,
+   X,
+   Image as ImageIcon,
 } from 'lucide-react';
 import { Rnd } from 'react-rnd';
-import html2canvas from 'html2canvas-pro';
 import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas-pro';
+
+if (typeof window !== 'undefined') {
+   window.html2canvas = html2canvas;
+}
 
 const BuilderPage = () => {
    const location = useLocation();
@@ -26,16 +34,26 @@ const BuilderPage = () => {
       () => location.state?.selectedImages || [],
       [location.state?.selectedImages],
    );
+   const { data: watchData } = useWatches();
+   const [catalogImages, setCatalogImages] = useState(selectedImages);
+   const isSingleImage = catalogImages.length === 1;
 
    const [currentStep, setCurrentStep] = useState(1);
-   const [selectedTemplate, setSelectedTemplate] = useState('grid');
+   const [selectedTemplate, setSelectedTemplate] = useState(
+      isSingleImage ? 'minimal' : 'grid',
+   );
    const [textElements, setTextElements] = useState([]);
    const [editingTextId, setEditingTextId] = useState(null);
    const [isGenerating, setIsGenerating] = useState(false);
+   const [isAddImageModalOpen, setIsAddImageModalOpen] = useState(false);
+   const [isGalleryPickerOpen, setIsGalleryPickerOpen] = useState(false);
+   const [selectedGalleryIds, setSelectedGalleryIds] = useState([]);
+   const [previewPageCount, setPreviewPageCount] = useState(1);
+   const [pageBreakAfterIds, setPageBreakAfterIds] = useState([]);
 
    // State for custom layout images
    const [builderImages, setBuilderImages] = useState(() =>
-      selectedImages.map((img, idx) => ({
+      catalogImages.map((img, idx) => ({
          ...img,
          x: 50 + (idx % 3) * 200,
          y: 100 + Math.floor(idx / 3) * 250,
@@ -44,7 +62,12 @@ const BuilderPage = () => {
       })),
    );
 
+   const [activeTemplateElements, setActiveTemplateElements] = useState([]);
+   const [mappedImages, setMappedImages] = useState({});
+   const [activePlaceholderId, setActivePlaceholderId] = useState(null);
+
    const catalogRef = useRef(null);
+   const A4_PAGE_HEIGHT_PX = 1131; // Exact ratio for 800px width (297/210 * 800)
 
    const steps = [
       { id: 1, name: 'Template Selection', icon: Layout },
@@ -75,6 +98,14 @@ const BuilderPage = () => {
       },
    ];
 
+   const [customTemplates, setCustomTemplates] = useState(() => {
+      return JSON.parse(localStorage.getItem('custom-templates') || '[]');
+   });
+
+   const allTemplates = useMemo(() => {
+      return [...templates, ...customTemplates];
+   }, [customTemplates]);
+
    const fonts = [
       { name: 'Playfair Display', value: "'Playfair Display', serif" },
       { name: 'Plus Jakarta Sans', value: "'Plus Jakarta Sans', sans-serif" },
@@ -96,6 +127,56 @@ const BuilderPage = () => {
          navigate('/gallery');
       }
    }, [selectedImages.length, navigate]);
+
+   useEffect(() => {
+      const node = catalogRef.current;
+      if (!node) return undefined;
+      if (typeof ResizeObserver === 'undefined') return undefined;
+
+      const updatePreviewPages = () => {
+         const height =
+            node.scrollHeight || node.getBoundingClientRect().height;
+         setPreviewPageCount(
+            Math.max(1, Math.ceil(height / A4_PAGE_HEIGHT_PX)),
+         );
+      };
+
+      updatePreviewPages();
+
+      const observer = new ResizeObserver(updatePreviewPages);
+      observer.observe(node);
+
+      return () => observer.disconnect();
+   }, [catalogImages, selectedTemplate, textElements, activeTemplateElements]);
+
+   useEffect(() => {
+      if (selectedTemplate.startsWith('custom-')) {
+         const template = customTemplates.find(
+            (t) => t.id === selectedTemplate,
+         );
+         if (template) {
+            setActiveTemplateElements(
+               template.elements.map((el) => ({ ...el })),
+            );
+         }
+      } else {
+         setActiveTemplateElements([]);
+      }
+   }, [selectedTemplate, customTemplates]);
+
+   const galleryImages = useMemo(
+      () =>
+         (watchData?.items || []).map((w) => ({
+            id: w.id,
+            src: w.image_url,
+            alt: w.model_name,
+            brand: w.brand,
+            mrp: w.mrp,
+            color: w.color,
+            dialColor: w.dial_color,
+         })),
+      [watchData],
+   );
 
    const addTextElement = () => {
       const newText = {
@@ -128,6 +209,84 @@ const BuilderPage = () => {
       );
    };
 
+   const addImagesToCatalog = (imagesToAdd) => {
+      if (!imagesToAdd || imagesToAdd.length === 0) return;
+
+      setCatalogImages((prev) => {
+         const existingIds = new Set(prev.map((img) => img.id));
+         return [
+            ...prev,
+            ...imagesToAdd.filter((img) => !existingIds.has(img.id)),
+         ];
+      });
+
+      setBuilderImages((prev) => {
+         const existingIds = new Set(prev.map((img) => img.id));
+         const additions = imagesToAdd
+            .filter((img) => !existingIds.has(img.id))
+            .map((img, idx) => ({
+               ...img,
+               x: 50 + ((prev.length + idx) % 3) * 200,
+               y: 100 + Math.floor((prev.length + idx) / 3) * 250,
+               width: 250,
+               height: 250,
+            }));
+
+         return additions.length > 0 ? [...prev, ...additions] : prev;
+      });
+   };
+
+   const addNewPage = () => {
+      if (catalogImages.length === 0) return;
+
+      const lastImageId = catalogImages[catalogImages.length - 1].id;
+      setPageBreakAfterIds((prev) =>
+         prev.includes(lastImageId) ? prev : [...prev, lastImageId],
+      );
+   };
+
+   const hasPageBreakAfter = (imageId) => pageBreakAfterIds.includes(imageId);
+
+   const addCatalogImage = () => {
+      const imageUrl = window.prompt('Enter image URL to add to the catalog:');
+      if (!imageUrl) return;
+
+      const altText =
+         window.prompt('Enter image title/alt text:') || 'New Image';
+      const brandText = window.prompt('Enter brand name:') || 'Custom';
+
+      const newImage = {
+         id: `added-${Date.now()}`,
+         src: imageUrl,
+         alt: altText,
+         brand: brandText,
+      };
+
+      addImagesToCatalog([newImage]);
+   };
+
+   const addSelectedGalleryImages = () => {
+      const imagesToAdd = galleryImages.filter((img) =>
+         selectedGalleryIds.includes(img.id),
+      );
+
+      if (activePlaceholderId) {
+         if (imagesToAdd.length > 0) {
+            setMappedImages((prev) => ({
+               ...prev,
+               [activePlaceholderId]: imagesToAdd[0].id,
+            }));
+            addImagesToCatalog(imagesToAdd);
+         }
+         setActivePlaceholderId(null);
+      } else {
+         addImagesToCatalog(imagesToAdd);
+      }
+
+      setSelectedGalleryIds([]);
+      setIsGalleryPickerOpen(false);
+   };
+
    const removeTextElement = (id) => {
       setTextElements((prev) => prev.filter((el) => el.id !== id));
       setEditingTextId(null);
@@ -137,16 +296,9 @@ const BuilderPage = () => {
       if (!catalogRef.current) return;
       setIsGenerating(true);
 
-      try {
-         // html2canvas-pro supports oklch() natively — render directly
-         const canvas = await html2canvas(catalogRef.current, {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            logging: false,
-         });
+      const originalStyles = new Map();
 
-         const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      try {
          const pdf = new jsPDF({
             orientation: 'p',
             unit: 'mm',
@@ -155,76 +307,334 @@ const BuilderPage = () => {
          });
 
          const pdfWidth = pdf.internal.pageSize.getWidth();
-         const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+         const pdfHeight = pdf.internal.pageSize.getHeight();
+         const margin = 10;
+         const maxWidth = pdfWidth - margin * 2;
+         const maxHeight = pdfHeight - margin * 2;
 
-         pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+         const container = catalogRef.current;
+         const domWidth = container.clientWidth; // Calculate the equivalent height of one A4 print page in the browser DOM
+
+         const domPageHeight = (domWidth * maxHeight) / maxWidth; // Target all elements we want to protect from being sliced
+
+         const elements = container.querySelectorAll('.pdf-item'); // Loop sequentially so shifting one element recalculates the position for the next
+
+         for (let i = 0; i < elements.length; i++) {
+            const el = elements[i];
+            const rect = el.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const topRelativeToContainer = rect.top - containerRect.top;
+            const elementBottom = topRelativeToContainer + rect.height; // Check which virtual page the element starts and ends on
+
+            const startPage = Math.floor(
+               topRelativeToContainer / domPageHeight,
+            );
+            const endPage = Math.floor(elementBottom / domPageHeight);
+
+            if (startPage !== endPage) {
+               // Element crosses a boundary. Push it to start exactly on the next page.
+               const nextBoundary = endPage * domPageHeight;
+               const pushAmount = nextBoundary - topRelativeToContainer;
+
+               originalStyles.set(el, el.style.marginTop);
+               const currentMargin =
+                  parseFloat(window.getComputedStyle(el).marginTop) || 0;
+               // Add slight padding (e.g., 20px) to clear the border cleanly
+               el.style.marginTop = `${currentMargin + pushAmount + 20}px`;
+            }
+         } // Allow a brief moment for the browser to render the margin shifts
+
+         await new Promise((resolve) => setTimeout(resolve, 100));
+
+         const canvas = await html2canvas(container, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+         });
+
+         const pageHeightPx = Math.floor((canvas.width * maxHeight) / maxWidth);
+         const totalPages = Math.max(
+            1,
+            Math.ceil(canvas.height / pageHeightPx),
+         );
+
+         for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
+            if (pageIndex > 0) {
+               pdf.addPage();
+            }
+
+            const sourceY = pageIndex * pageHeightPx;
+            const sliceHeight = Math.min(pageHeightPx, canvas.height - sourceY);
+
+            const pageCanvas = document.createElement('canvas');
+            pageCanvas.width = canvas.width;
+            pageCanvas.height = sliceHeight;
+
+            const pageCtx = pageCanvas.getContext('2d');
+            pageCtx.drawImage(
+               canvas,
+               0,
+               sourceY,
+               canvas.width,
+               sliceHeight,
+               0,
+               0,
+               canvas.width,
+               sliceHeight,
+            );
+
+            const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.95);
+            const renderHeight = (sliceHeight * maxWidth) / canvas.width;
+
+            pdf.addImage(
+               pageImgData,
+               'JPEG',
+               margin,
+               margin,
+               maxWidth,
+               renderHeight,
+            );
+         }
+
          pdf.save('b-watch-luxury-catalog.pdf');
       } catch (error) {
          console.error('PDF Generation failed:', error);
          alert('PDF generation failed — see console for details.');
       } finally {
+         // Clean up: Reset the UI to its original layout so the web view isn't broken
+         originalStyles.forEach((marginTop, el) => {
+            el.style.marginTop = marginTop;
+         });
          setIsGenerating(false);
       }
    };
 
+   const availableGalleryImages = galleryImages.filter(
+      (img) => !catalogImages.some((current) => current.id === img.id),
+   );
+
+   const pickerImages = activePlaceholderId
+      ? galleryImages
+      : availableGalleryImages;
+
+   const renderPageBreakMarker = (key) => (
+      <div
+         key={key}
+         className="w-full h-0"
+         style={{
+            breakAfter: 'page',
+            pageBreakAfter: 'always',
+            gridColumn: '1 / -1',
+         }}>
+         <div className="absolute left-0 right-0 border-t-2 border-dashed border-neutral-300/70 pointer-events-none" />
+      </div>
+   );
+
    const renderTemplate = () => {
       switch (selectedTemplate) {
          case 'grid':
+            if (isSingleImage) {
+               return (
+                  <div className="min-h-[860px] flex items-center justify-center">
+                     <div className="w-full">
+                        <div className="rounded-[2rem] overflow-hidden bg-white border border-neutral-100 shadow-xl h-[780px] flex items-center justify-center">
+                           <img
+                              src={catalogImages[0]?.src}
+                              alt={catalogImages[0]?.alt}
+                              className="w-full h-full object-cover"
+                           />
+                        </div>
+                        {hasPageBreakAfter(catalogImages[0]?.id) &&
+                           renderPageBreakMarker(
+                              `grid-single-${catalogImages[0]?.id}`,
+                           )}
+                     </div>
+                  </div>
+               );
+            }
+
             return (
                <div className="grid grid-cols-2 gap-4">
-                  {selectedImages.map((img) => (
-                     <div
-                        key={img.id}
-                        className="aspect-square rounded-xl overflow-hidden border border-neutral-100 shadow-sm">
-                        <img
-                           src={img.src}
-                           alt={img.alt}
-                           className="w-full h-full object-cover"
-                        />
-                     </div>
-                  ))}
-               </div>
-            );
-         case 'mosaic':
-            return (
-               <div className="grid grid-cols-2 md:grid-cols-4 auto-rows-[200px] gap-4">
-                  {selectedImages.map((img, idx) => (
-                     <div
-                        key={img.id}
-                        className={`rounded-xl overflow-hidden border border-neutral-100 shadow-sm ${
-                           idx % 3 === 0
-                              ? 'col-span-2 row-span-2'
-                              : 'col-span-1 row-span-1'
-                        }`}>
-                        <img
-                           src={img.src}
-                           alt={img.alt}
-                           className="w-full h-full object-cover"
-                        />
-                     </div>
-                  ))}
-               </div>
-            );
-         case 'minimal':
-            return (
-               <div className="space-y-8">
-                  <div className="aspect-[16/9] rounded-3xl overflow-hidden border border-neutral-100 shadow-md">
-                     <img
-                        src={selectedImages[0]?.src}
-                        alt={selectedImages[0]?.alt}
-                        className="w-full h-full object-cover"
-                     />
-                  </div>
-                  <div className="grid grid-cols-3 gap-4">
-                     {selectedImages.slice(1).map((img) => (
+                  {catalogImages.map((img) => (
+                     <div key={img.id} className="contents">
                         <div
-                           key={img.id}
-                           className="aspect-square rounded-xl overflow-hidden border border-neutral-100 shadow-sm">
+                           className="aspect-square rounded-xl overflow-hidden border border-neutral-100 shadow-sm"
+                           style={{
+                              breakInside: 'avoid',
+                              pageBreakInside: 'avoid',
+                           }}>
                            <img
                               src={img.src}
                               alt={img.alt}
                               className="w-full h-full object-cover"
                            />
+                        </div>
+                        {hasPageBreakAfter(img.id) &&
+                           renderPageBreakMarker(`grid-${img.id}`)}
+                     </div>
+                  ))}
+               </div>
+            );
+         case 'mosaic':
+            if (catalogImages.length <= 2) {
+               return (
+                  <div
+                     className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[780px]"
+                     style={{ gridAutoRows: '1fr' }}>
+                     {catalogImages.map((img) => (
+                        <div key={img.id} className="contents">
+                           <div
+                              className="min-h-[360px] md:min-h-0 rounded-[1.5rem] overflow-hidden border border-neutral-100 shadow-sm h-full"
+                              style={{
+                                 breakInside: 'avoid',
+                                 pageBreakInside: 'avoid',
+                              }}>
+                              <img
+                                 src={img.src}
+                                 alt={img.alt}
+                                 className="w-full h-full object-cover"
+                              />
+                           </div>
+                           {hasPageBreakAfter(img.id) &&
+                              renderPageBreakMarker(`mosaic-small-${img.id}`)}
+                        </div>
+                     ))}
+                  </div>
+               );
+            }
+
+            if (catalogImages.length === 3) {
+               return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[780px]">
+                     <div
+                        className="rounded-[1.5rem] overflow-hidden border border-neutral-100 shadow-sm min-h-[780px]"
+                        style={{
+                           breakInside: 'avoid',
+                           pageBreakInside: 'avoid',
+                        }}>
+                        <img
+                           src={catalogImages[0]?.src}
+                           alt={catalogImages[0]?.alt}
+                           className="w-full h-full object-cover"
+                        />
+                     </div>
+                     <div className="grid grid-rows-2 gap-4 min-h-[780px]">
+                        {catalogImages.slice(1).map((img) => (
+                           <div key={img.id} className="contents">
+                              <div
+                                 className="rounded-[1.5rem] overflow-hidden border border-neutral-100 shadow-sm min-h-[383px]"
+                                 style={{
+                                    breakInside: 'avoid',
+                                    pageBreakInside: 'avoid',
+                                 }}>
+                                 <img
+                                    src={img.src}
+                                    alt={img.alt}
+                                    className="w-full h-full object-cover"
+                                 />
+                              </div>
+                              {hasPageBreakAfter(img.id) &&
+                                 renderPageBreakMarker(`mosaic-mid-${img.id}`)}
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+               );
+            }
+
+            return (
+               <div className="grid grid-cols-2 md:grid-cols-4 auto-rows-[180px] md:auto-rows-[220px] gap-4 min-h-[780px]">
+                  {catalogImages.map((img, idx) => (
+                     <div key={img.id} className="contents">
+                        <div
+                           className={`rounded-[1.5rem] overflow-hidden border border-neutral-100 shadow-sm ${
+                              catalogImages.length === 4
+                                 ? idx === 0 || idx === 3
+                                    ? 'col-span-2 row-span-2'
+                                    : 'col-span-1 row-span-1'
+                                 : idx % 4 === 0
+                                   ? 'col-span-2 row-span-2'
+                                   : 'col-span-1 row-span-1'
+                           }`}
+                           style={{
+                              breakInside: 'avoid',
+                              pageBreakInside: 'avoid',
+                           }}>
+                           <img
+                              src={img.src}
+                              alt={img.alt}
+                              className="w-full h-full object-cover"
+                           />
+                        </div>
+                        {hasPageBreakAfter(img.id) &&
+                           renderPageBreakMarker(`mosaic-large-${img.id}`)}
+                     </div>
+                  ))}
+               </div>
+            );
+         case 'minimal':
+            if (isSingleImage) {
+               return (
+                  <div className="min-h-[920px] flex flex-col items-center justify-center gap-10 py-8">
+                     <div className="w-full max-w-4xl">
+                        <div
+                           className="relative rounded-[2.5rem] overflow-hidden min-h-[780px] flex items-center justify-center p-8 md:p-12"
+                           style={{
+                              breakInside: 'avoid',
+                              pageBreakInside: 'avoid',
+                           }}>
+                           <img
+                              src={catalogImages[0]?.src}
+                              alt={catalogImages[0]?.alt}
+                              className="w-full h-full max-h-[720px] object-contain drop-shadow-2xl"
+                           />
+                        </div>
+                        {hasPageBreakAfter(catalogImages[0]?.id) &&
+                           renderPageBreakMarker(
+                              `minimal-single-${catalogImages[0]?.id}`,
+                           )}
+                     </div>
+                     <div className="text-center">
+                        <h2
+                           className="text-3xl md:text-5xl font-light italic text-[#c09a74]"
+                           style={{ fontFamily: "'Playfair Display', serif" }}>
+                           {catalogImages[0]?.alt}
+                        </h2>
+                        <p className="mt-3 text-[10px] md:text-xs uppercase tracking-[0.35em] text-neutral-400 font-bold">
+                           {catalogImages[0]?.brand}
+                        </p>
+                     </div>
+                  </div>
+               );
+            }
+
+            return (
+               <div className="space-y-8">
+                  <div className="aspect-[16/9] rounded-3xl overflow-hidden border border-neutral-100 shadow-md">
+                     <img
+                        src={catalogImages[0]?.src}
+                        alt={catalogImages[0]?.alt}
+                        className="w-full h-full object-cover"
+                     />
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                     {catalogImages.slice(1).map((img) => (
+                        <div key={img.id} className="contents">
+                           <div
+                              className="aspect-square rounded-xl overflow-hidden border border-neutral-100 shadow-sm"
+                              style={{
+                                 breakInside: 'avoid',
+                                 pageBreakInside: 'avoid',
+                              }}>
+                              <img
+                                 src={img.src}
+                                 alt={img.alt}
+                                 className="w-full h-full object-cover"
+                              />
+                           </div>
+                           {hasPageBreakAfter(img.id) &&
+                              renderPageBreakMarker(`minimal-${img.id}`)}
                         </div>
                      ))}
                   </div>
@@ -267,12 +677,291 @@ const BuilderPage = () => {
                </div>
             );
          default:
+            if (selectedTemplate.startsWith('custom-')) {
+               const template = customTemplates.find(
+                  (t) => t.id === selectedTemplate,
+               );
+               if (!template) return null;
+
+               const imagePlaceholders = activeTemplateElements.filter(
+                  (el) => el.type === 'image',
+               );
+
+               return (
+                  <div
+                     className="relative mx-auto bg-white shadow-2xl"
+                     style={{ width: '800px', height: '1131px' }}>
+                     {activeTemplateElements.map((el) => {
+                        if (el.type === 'image') {
+                           // Find which image to show in this placeholder
+                           let imageToShow = null;
+                           if (mappedImages[el.id]) {
+                              imageToShow = galleryImages.find(
+                                 (img) => img.id === mappedImages[el.id],
+                              );
+                           } else {
+                              const placeholderIdx =
+                                 imagePlaceholders.findIndex(
+                                    (p) => p.id === el.id,
+                                 );
+                              imageToShow =
+                                 catalogImages[
+                                    placeholderIdx % catalogImages.length
+                                 ];
+                           }
+
+                           return (
+                              <div
+                                 key={el.id}
+                                 onClick={() => {
+                                    setActivePlaceholderId(el.id);
+                                    setIsGalleryPickerOpen(true);
+                                 }}
+                                 style={{
+                                    position: 'absolute',
+                                    left: el.x,
+                                    top: el.y,
+                                    width: el.width,
+                                    height: el.height,
+                                 }}
+                                 className="rounded-xl overflow-hidden border border-neutral-100 shadow-sm cursor-pointer group hover:ring-2 hover:ring-[#c09a74] transition-all">
+                                 {imageToShow ? (
+                                    <div className="w-full h-full relative">
+                                       <img
+                                          src={imageToShow.src}
+                                          alt={imageToShow.alt}
+                                          className="w-full h-full object-cover"
+                                       />
+                                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                          <span className="text-[10px] text-white uppercase font-bold tracking-widest">
+                                             Change Image
+                                          </span>
+                                       </div>
+                                    </div>
+                                 ) : (
+                                    <div className="w-full h-full bg-neutral-100 flex items-center justify-center text-neutral-300">
+                                       <ImageIcon size={24} />
+                                    </div>
+                                 )}
+                              </div>
+                           );
+                        } else {
+                           return (
+                              <div
+                                 key={el.id}
+                                 style={{
+                                    position: 'absolute',
+                                    left: el.x,
+                                    top: el.y,
+                                    width: el.width,
+                                    height: el.height,
+                                    fontSize: `${el.fontSize}px`,
+                                    fontFamily: el.fontFamily,
+                                    color: el.color,
+                                 }}
+                                 className="flex items-center justify-center text-center">
+                                 <input
+                                    type="text"
+                                    value={el.content}
+                                    onChange={(e) => {
+                                       const newContent = e.target.value;
+                                       setActiveTemplateElements((prev) =>
+                                          prev.map((item) =>
+                                             item.id === el.id
+                                                ? {
+                                                     ...item,
+                                                     content: newContent,
+                                                  }
+                                                : item,
+                                          ),
+                                       );
+                                    }}
+                                    className="w-full bg-transparent border-none text-center focus:outline-none focus:ring-1 focus:ring-[#c09a74]/30 rounded"
+                                    style={{
+                                       fontSize: 'inherit',
+                                       fontFamily: 'inherit',
+                                       color: 'inherit',
+                                    }}
+                                 />
+                              </div>
+                           );
+                        }
+                     })}
+                  </div>
+               );
+            }
             return null;
       }
    };
 
    return (
       <div className="min-h-screen bg-[#fafafa] text-black font-sans">
+         <AnimatePresence>
+            {isAddImageModalOpen && (
+               <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[600] bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
+                  <motion.div
+                     initial={{ scale: 0.95, y: 20 }}
+                     animate={{ scale: 1, y: 0 }}
+                     exit={{ scale: 0.95, y: 20 }}
+                     className="w-full max-w-3xl rounded-[2rem] bg-white shadow-2xl overflow-hidden">
+                     <div className="p-6 md:p-8 border-b border-neutral-100 flex items-center justify-between">
+                        <div>
+                           <h2
+                              className="text-2xl font-light italic text-[#c09a74]"
+                              style={{
+                                 fontFamily: "'Playfair Display', serif",
+                              }}>
+                              Add Image
+                           </h2>
+                           <p className="text-xs uppercase tracking-widest font-bold text-neutral-400 mt-1">
+                              Choose from gallery or use a URL
+                           </p>
+                        </div>
+                        <button
+                           onClick={() => setIsAddImageModalOpen(false)}
+                           className="w-10 h-10 rounded-full bg-neutral-100 text-neutral-500">
+                           <X size={18} />
+                        </button>
+                     </div>
+
+                     <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <button
+                           onClick={() => {
+                              setIsAddImageModalOpen(false);
+                              addCatalogImage();
+                           }}
+                           className="rounded-3xl border border-neutral-200 p-6 text-left hover:border-[#c09a74] hover:bg-[#c09a74]/5 transition-all">
+                           <h3 className="text-lg font-bold">Add by URL</h3>
+                           <p className="text-sm text-neutral-500 mt-2">
+                              Paste an image link and add it to the catalog.
+                           </p>
+                        </button>
+
+                        <button
+                           onClick={() => {
+                              setIsAddImageModalOpen(false);
+                              setIsGalleryPickerOpen(true);
+                           }}
+                           className="rounded-3xl border border-neutral-200 p-6 text-left hover:border-[#c09a74] hover:bg-[#c09a74]/5 transition-all">
+                           <h3 className="text-lg font-bold">
+                              Choose from Gallery
+                           </h3>
+                           <p className="text-sm text-neutral-500 mt-2">
+                              Select watches from your saved collection.
+                           </p>
+                        </button>
+                     </div>
+                  </motion.div>
+               </motion.div>
+            )}
+         </AnimatePresence>
+
+         <AnimatePresence>
+            {isGalleryPickerOpen && (
+               <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-[650] bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
+                  <motion.div
+                     initial={{ scale: 0.95, y: 20 }}
+                     animate={{ scale: 1, y: 0 }}
+                     exit={{ scale: 0.95, y: 20 }}
+                     className="w-full max-w-6xl rounded-[2rem] bg-white shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+                     <div className="p-6 md:p-8 border-b border-neutral-100 flex items-center justify-between">
+                        <div>
+                           <h2
+                              className="text-2xl font-light italic text-[#c09a74]"
+                              style={{
+                                 fontFamily: "'Playfair Display', serif",
+                              }}>
+                              Select from Gallery
+                           </h2>
+                           <p className="text-xs uppercase tracking-widest font-bold text-neutral-400 mt-1">
+                              Pick one or more items to add
+                           </p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                           <button
+                              onClick={() => {
+                                 setIsGalleryPickerOpen(false);
+                                 setSelectedGalleryIds([]);
+                              }}
+                              className="px-4 py-2 rounded-full border border-neutral-200 text-xs uppercase tracking-widest font-bold">
+                              Cancel
+                           </button>
+                           <button
+                              onClick={addSelectedGalleryImages}
+                              disabled={selectedGalleryIds.length === 0}
+                              className="px-4 py-2 rounded-full bg-black text-white text-xs uppercase tracking-widest font-bold disabled:opacity-40">
+                              Add Selected ({selectedGalleryIds.length})
+                           </button>
+                        </div>
+                     </div>
+
+                     <div className="p-6 md:p-8 overflow-y-auto">
+                        {pickerImages.length === 0 ? (
+                           <div className="py-16 text-center text-neutral-500">
+                              No images available to add.
+                           </div>
+                        ) : (
+                           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                              {pickerImages.map((img) => {
+                                 const isSelected = selectedGalleryIds.includes(
+                                    img.id,
+                                 );
+                                 return (
+                                    <button
+                                       key={img.id}
+                                       onClick={() =>
+                                          setSelectedGalleryIds((prev) =>
+                                             prev.includes(img.id)
+                                                ? prev.filter(
+                                                     (id) => id !== img.id,
+                                                  )
+                                                : [...prev, img.id],
+                                          )
+                                       }
+                                       className={`relative overflow-hidden rounded-2xl border-2 text-left transition-all ${
+                                          isSelected
+                                             ? 'border-[#c09a74] ring-2 ring-[#c09a74]/20'
+                                             : 'border-transparent hover:border-neutral-200'
+                                       }`}>
+                                       <div className="aspect-square">
+                                          <img
+                                             src={img.src}
+                                             alt={img.alt}
+                                             className="w-full h-full object-cover"
+                                          />
+                                       </div>
+                                       <div className="p-3">
+                                          <div className="text-sm font-bold truncate">
+                                             {img.alt}
+                                          </div>
+                                          <div className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">
+                                             {img.brand}
+                                          </div>
+                                       </div>
+                                       {isSelected && (
+                                          <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-[#c09a74] text-white flex items-center justify-center">
+                                             <Check size={16} />
+                                          </div>
+                                       )}
+                                    </button>
+                                 );
+                              })}
+                           </div>
+                        )}
+                     </div>
+                  </motion.div>
+               </motion.div>
+            )}
+         </AnimatePresence>
+
          {/* Navigation Bar */}
          <nav className="bg-white border-b border-neutral-200 px-6 py-4 flex items-center justify-between sticky top-0 z-[100]">
             <div className="flex items-center gap-4 md:gap-6">
@@ -360,15 +1049,29 @@ const BuilderPage = () => {
                <div className="lg:col-span-4 space-y-6 sticky top-28">
                   {currentStep === 1 && (
                      <div className="bg-white rounded-3xl p-8 border border-neutral-200 shadow-sm">
-                        <h3 className="text-sm uppercase tracking-widest font-bold text-neutral-400 mb-6">
-                           Select Layout
-                        </h3>
-                        <div className="space-y-4">
-                           {templates.map((tpl) => (
+                        <div className="flex items-center justify-between gap-4 mb-6">
+                           <h3 className="text-sm uppercase tracking-widest font-bold text-neutral-400">
+                              Select Layout
+                           </h3>
+                           <div className="flex items-center gap-2">
+                              {/* <button
+                                 onClick={addNewPage}
+                                 className="px-4 py-2 rounded-full border border-neutral-200 text-black text-[10px] uppercase tracking-widest font-bold hover:border-[#c09a74] hover:text-[#c09a74] transition-colors">
+                                 Add New Page
+                              </button> */}
                               <button
+                                 onClick={() => setIsAddImageModalOpen(true)}
+                                 className="px-4 py-2 rounded-full bg-black text-white text-[10px] uppercase tracking-widest font-bold hover:bg-[#c09a74] transition-colors">
+                                 Add Image
+                              </button>
+                           </div>
+                        </div>
+                        <div className="space-y-4">
+                           {allTemplates.map((tpl) => (
+                              <div
                                  key={tpl.id}
                                  onClick={() => setSelectedTemplate(tpl.id)}
-                                 className={`w-full text-left p-6 rounded-2xl border-2 transition-all duration-300 ${
+                                 className={`w-full text-left p-6 rounded-2xl border-2 transition-all duration-300 cursor-pointer ${
                                     selectedTemplate === tpl.id
                                        ? 'border-[#c09a74] bg-[#c09a74]/5 shadow-inner'
                                        : 'border-neutral-100 hover:border-neutral-200 shadow-sm'
@@ -377,17 +1080,100 @@ const BuilderPage = () => {
                                     <span className="block text-base font-bold text-black">
                                        {tpl.name}
                                     </span>
-                                    {tpl.id === 'custom' && (
-                                       <span className="bg-black text-white text-[8px] px-2 py-0.5 rounded-full uppercase">
-                                          Pro
-                                       </span>
-                                    )}
+                                    <div className="flex items-start gap-2">
+                                       {(tpl.id === 'custom' ||
+                                          tpl.id.startsWith('custom-')) && (
+                                          <span className="bg-black text-white text-[8px] px-2 py-0.5 rounded-full uppercase">
+                                             Pro
+                                          </span>
+                                       )}
+                                       {tpl.id.startsWith('custom-') && (
+                                          <button
+                                             onClick={(e) => {
+                                                e.stopPropagation();
+                                                const confirmed =
+                                                   window.confirm(
+                                                      'Delete this custom template?',
+                                                   );
+                                                if (confirmed) {
+                                                   const filtered =
+                                                      customTemplates.filter(
+                                                         (t) => t.id !== tpl.id,
+                                                      );
+                                                   localStorage.setItem(
+                                                      'custom-templates',
+                                                      JSON.stringify(filtered),
+                                                   );
+                                                   setCustomTemplates(filtered);
+                                                   if (
+                                                      selectedTemplate ===
+                                                      tpl.id
+                                                   ) {
+                                                      setSelectedTemplate(
+                                                         isSingleImage
+                                                            ? 'minimal'
+                                                            : 'grid',
+                                                      );
+                                                   }
+                                                }
+                                             }}
+                                             className="text-red-400 hover:text-red-600 transition-colors">
+                                             <Trash2 size={14} />
+                                          </button>
+                                       )}
+                                    </div>
                                  </div>
                                  <span className="block text-xs text-neutral-500">
                                     {tpl.description}
                                  </span>
-                              </button>
+                              </div>
                            ))}
+                        </div>
+
+                        <div className="mt-6 rounded-2xl border border-dashed border-neutral-200 p-4">
+                           <p className="text-[10px] uppercase tracking-widest font-bold text-neutral-400 mb-2">
+                              Catalog Images
+                           </p>
+                           <div className="flex flex-wrap gap-2">
+                              {catalogImages.map((img) => (
+                                 <div
+                                    key={img.id}
+                                    className="flex items-center gap-2 bg-neutral-100 px-3 py-1.5 rounded-full group border border-neutral-200">
+                                    <span className="text-[10px] text-neutral-600 font-medium">
+                                       {img.alt}
+                                    </span>
+                                    <button
+                                       onClick={() => {
+                                          setCatalogImages((prev) =>
+                                             prev.filter(
+                                                (i) => i.id !== img.id,
+                                             ),
+                                          );
+                                          setMappedImages((prev) => {
+                                             const next = { ...prev };
+                                             Object.keys(next).forEach(
+                                                (key) => {
+                                                   if (next[key] === img.id)
+                                                      delete next[key];
+                                                },
+                                             );
+                                             return next;
+                                          });
+                                       }}
+                                       className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all">
+                                       <X size={10} />
+                                    </button>
+                                 </div>
+                              ))}
+                              <button
+                                 onClick={() => {
+                                    setActivePlaceholderId(null);
+                                    setIsGalleryPickerOpen(true);
+                                 }}
+                                 className="text-[10px] px-3 py-1.5 rounded-full border border-dashed border-neutral-300 text-neutral-400 hover:border-[#c09a74] hover:text-[#c09a74] transition-colors flex items-center gap-1">
+                                 <Plus size={10} /> Add
+                              </button>
+                           </div>
                         </div>
                      </div>
                   )}
@@ -644,7 +1430,12 @@ const BuilderPage = () => {
                <div className="lg:col-span-8">
                   <div
                      id="catalog-canvas"
-                     className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-2xl p-3 md:p-8 border border-neutral-200 min-h-[500px] md:min-h-[1123px] relative overflow-hidden"
+                     className={`bg-white ${
+                        isGenerating
+                           ? 'p-0 shadow-none border-none rounded-none'
+                           : 'shadow-2xl p-3 md:p-8 rounded-3xl md:rounded-[2.5rem] border border-neutral-200'
+                     } min-h-[1131px] relative overflow-hidden`}
+                     style={{ width: isGenerating ? '800px' : 'auto' }}
                      ref={catalogRef}>
                      {/* Background Decoration */}
                      {/* <div className="absolute inset-0 flex items-center justify-center opacity-[0.03] pointer-events-none select-none">
@@ -656,6 +1447,22 @@ const BuilderPage = () => {
                      </div> */}
 
                      <div className="relative z-10">{renderTemplate()}</div>
+
+                     {previewPageCount > 1 &&
+                        Array.from({ length: previewPageCount - 1 }).map(
+                           (_, index) => (
+                              <div
+                                 key={`page-break-${index}`}
+                                 className="absolute left-0 right-0 border-t-2 border-dashed border-neutral-300/80 pointer-events-none"
+                                 style={{
+                                    top: `${(index + 1) * A4_PAGE_HEIGHT_PX}px`,
+                                 }}>
+                                 <span className="absolute right-6 -top-3 bg-white px-2 text-[10px] uppercase tracking-widest text-neutral-400 font-bold">
+                                    Page {index + 2}
+                                 </span>
+                              </div>
+                           ),
+                        )}
 
                      {/* Text Layer */}
                      <div className="absolute inset-0 z-20 pointer-events-none">
