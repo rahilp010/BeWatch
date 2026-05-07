@@ -50,6 +50,9 @@ const BuilderPage = () => {
    const [selectedGalleryIds, setSelectedGalleryIds] = useState([]);
    const [previewPageCount, setPreviewPageCount] = useState(1);
    const [pageBreakAfterIds, setPageBreakAfterIds] = useState([]);
+   const [activeCatalogImageId, setActiveCatalogImageId] = useState(
+      selectedImages[0]?.id || null,
+   );
 
    // State for custom layout images
    const [builderImages, setBuilderImages] = useState(() =>
@@ -122,11 +125,61 @@ const BuilderPage = () => {
       '#ffffff',
    ];
 
+   const formatPrice = (value) => {
+      const numberValue = Number(value);
+      if (!Number.isFinite(numberValue) || numberValue <= 0) return 'Price on request';
+      return `₹${new Intl.NumberFormat('en-IN').format(numberValue)}`;
+   };
+
+   const chunkArray = (items, size) => {
+      const chunks = [];
+      for (let i = 0; i < items.length; i += size) {
+         chunks.push(items.slice(i, i + size));
+      }
+      return chunks;
+   };
+
+   const updateCatalogImage = (id, updates) => {
+      setCatalogImages((prev) =>
+         prev.map((img) => (img.id === id ? { ...img, ...updates } : img)),
+      );
+      setBuilderImages((prev) =>
+         prev.map((img) => (img.id === id ? { ...img, ...updates } : img)),
+      );
+   };
+
+   const activeCatalogImage = useMemo(
+      () =>
+         catalogImages.find((img) => img.id === activeCatalogImageId) ||
+         catalogImages[0] ||
+         null,
+      [catalogImages, activeCatalogImageId],
+   );
+
+   const classicGridPages = useMemo(
+      () => chunkArray(catalogImages, 6),
+      [catalogImages],
+   );
+
    useEffect(() => {
       if (selectedImages.length === 0) {
          navigate('/gallery');
       }
    }, [selectedImages.length, navigate]);
+
+   useEffect(() => {
+      if (!catalogImages.length) {
+         setActiveCatalogImageId(null);
+         return;
+      }
+
+      const exists = catalogImages.some(
+         (img) => img.id === activeCatalogImageId,
+      );
+      if (!exists) {
+         setActiveCatalogImageId(catalogImages[0].id);
+      }
+   }, [catalogImages, activeCatalogImageId]);
 
    useEffect(() => {
       const node = catalogRef.current;
@@ -346,11 +399,63 @@ const BuilderPage = () => {
 
          await new Promise((resolve) => setTimeout(resolve, 100));
 
+         const contentBounds =
+            elements.length > 0
+               ? Array.from(elements).reduce(
+                    (acc, el) => {
+                       const rect = el.getBoundingClientRect();
+                       const containerRect = container.getBoundingClientRect();
+                       const left = rect.left - containerRect.left;
+                       const top = rect.top - containerRect.top;
+                       const right = left + rect.width;
+                       const bottom = top + rect.height;
+
+                       return {
+                          left: Math.min(acc.left, left),
+                          top: Math.min(acc.top, top),
+                          right: Math.max(acc.right, right),
+                          bottom: Math.max(acc.bottom, bottom),
+                       };
+                    },
+                    {
+                       left: Infinity,
+                       top: Infinity,
+                       right: 0,
+                       bottom: 0,
+                    },
+                 )
+               : {
+                    left: 0,
+                    top: 0,
+                    right: container.scrollWidth,
+                    bottom: container.scrollHeight,
+                 };
+
+         const cropPadding = 8;
+         const cropX = Math.max(0, Math.floor(contentBounds.left - cropPadding));
+         const cropY = Math.max(0, Math.floor(contentBounds.top - cropPadding));
+         const cropWidth = Math.ceil(
+            Math.min(
+               container.scrollWidth - cropX,
+               contentBounds.right - contentBounds.left + cropPadding * 2,
+            ),
+         );
+         const cropHeight = Math.ceil(
+            Math.min(
+               container.scrollHeight - cropY,
+               contentBounds.bottom - contentBounds.top + cropPadding * 2,
+            ),
+         );
+
          const canvas = await html2canvas(container, {
             scale: 2,
             useCORS: true,
             backgroundColor: '#ffffff',
             logging: false,
+            x: cropX,
+            y: cropY,
+            width: cropWidth,
+            height: cropHeight,
          });
 
          const pageHeightPx = Math.floor((canvas.width * maxHeight) / maxWidth);
@@ -431,6 +536,83 @@ const BuilderPage = () => {
       </div>
    );
 
+   const renderWatchMeta = (img, { compact = false } = {}) => (
+      <div
+         className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/50 to-transparent ${
+            compact ? 'p-3 md:p-4' : 'p-4 md:p-5'
+         }`}>
+         <div className="flex items-end justify-between gap-3 text-white">
+            <div className="min-w-0 flex-1 space-y-1">
+               <p
+                  className="text-[9px] md:text-[10px] uppercase tracking-[0.28em] text-[#f2d7bf] font-bold"
+                  style={{
+                     overflowWrap: 'anywhere',
+                  }}>
+                  {img.brand || 'Custom Brand'}
+               </p>
+               <h3
+                  className={`font-light italic leading-tight ${
+                     compact ? 'text-sm md:text-base' : 'text-base md:text-lg'
+                  }`}
+                  style={{
+                     fontFamily: "'Playfair Display', serif",
+                     overflowWrap: 'anywhere',
+                     wordBreak: 'break-word',
+                  }}>
+                  {img.alt || 'Untitled Watch'}
+               </h3>
+            </div>
+            <div className="text-right shrink-0 max-w-[44%] space-y-1">
+               <p className="text-xs md:text-sm font-bold tracking-widest">
+                  {formatPrice(img.mrp)}
+               </p>
+               {(img.color || img.dialColor) && (
+                  <div className="mt-1 flex flex-wrap justify-end gap-1">
+                     {img.color && (
+                        <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.18em]">
+                           {img.color}
+                        </span>
+                     )}
+                     {img.dialColor && (
+                        <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[9px] uppercase tracking-[0.18em]">
+                           Dial {img.dialColor}
+                        </span>
+                     )}
+                  </div>
+               )}
+            </div>
+         </div>
+      </div>
+   );
+
+   const renderWatchCard = ({
+      img,
+      className,
+      imageClassName = 'w-full h-full object-cover',
+      compact = false,
+      onClick,
+      style,
+   }) => (
+      <div
+         onClick={onClick}
+         style={{
+            breakInside: 'avoid',
+            pageBreakInside: 'avoid',
+            ...style,
+         }}
+         className={`relative overflow-hidden rounded-2xl border border-neutral-100 shadow-sm group bg-neutral-50 ${className || ''} ${
+            onClick ? 'cursor-pointer' : ''
+         } pdf-item`}>
+         <img
+            src={img.src}
+            alt={img.alt}
+            className={`${imageClassName} transition-transform duration-700 group-hover:scale-[1.03]`}
+         />
+         {renderWatchMeta(img, { compact })}
+         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300" />
+      </div>
+   );
+
    const renderTemplate = () => {
       switch (selectedTemplate) {
          case 'grid':
@@ -438,13 +620,19 @@ const BuilderPage = () => {
                return (
                   <div className="min-h-[860px] flex items-center justify-center">
                      <div className="w-full">
-                        <div className="rounded-[2rem] overflow-hidden bg-white border border-neutral-100 shadow-xl h-[780px] flex items-center justify-center">
-                           <img
-                              src={catalogImages[0]?.src}
-                              alt={catalogImages[0]?.alt}
-                              className="w-full h-full object-cover"
-                           />
-                        </div>
+                        {renderWatchCard({
+                           img: catalogImages[0],
+                           className:
+                              'rounded-[2rem] shadow-xl h-[780px] flex items-center justify-center',
+                           imageClassName: 'w-full h-full object-cover',
+                           onClick:
+                              currentStep === 1
+                                 ? () =>
+                                      setActiveCatalogImageId(
+                                         catalogImages[0]?.id,
+                                      )
+                                 : undefined,
+                        })}
                         {hasPageBreakAfter(catalogImages[0]?.id) &&
                            renderPageBreakMarker(
                               `grid-single-${catalogImages[0]?.id}`,
@@ -455,23 +643,40 @@ const BuilderPage = () => {
             }
 
             return (
-               <div className="grid grid-cols-2 gap-4">
-                  {catalogImages.map((img) => (
-                     <div key={img.id} className="contents">
-                        <div
-                           className="aspect-square rounded-xl overflow-hidden border border-neutral-100 shadow-sm"
-                           style={{
-                              breakInside: 'avoid',
-                              pageBreakInside: 'avoid',
-                           }}>
-                           <img
-                              src={img.src}
-                              alt={img.alt}
-                              className="w-full h-full object-cover"
-                           />
-                        </div>
-                        {hasPageBreakAfter(img.id) &&
-                           renderPageBreakMarker(`grid-${img.id}`)}
+               <div className="space-y-0">
+                  {classicGridPages.map((pageImages, pageIndex) => (
+                     <div
+                        key={`classic-grid-page-${pageIndex}`}
+                        className="grid grid-cols-2 grid-rows-3 gap-4 h-[1131px]"
+                        style={{
+                           breakInside: 'avoid',
+                           pageBreakInside: 'avoid',
+                           breakAfter:
+                              pageIndex < classicGridPages.length - 1
+                                 ? 'page'
+                                 : 'auto',
+                           pageBreakAfter:
+                              pageIndex < classicGridPages.length - 1
+                                 ? 'always'
+                                 : 'auto',
+                        }}>
+                        {pageImages.map((img) => (
+                           <div key={img.id} className="contents">
+                              {renderWatchCard({
+                                 img,
+                                 className: `h-full ${
+                                    currentStep === 1 &&
+                                    activeCatalogImageId === img.id
+                                       ? 'ring-2 ring-[#c09a74] ring-offset-2'
+                                       : ''
+                                 }`,
+                                 onClick:
+                                    currentStep === 1
+                                       ? () => setActiveCatalogImageId(img.id)
+                                       : undefined,
+                              })}
+                           </div>
+                        ))}
                      </div>
                   ))}
                </div>
@@ -484,18 +689,14 @@ const BuilderPage = () => {
                      style={{ gridAutoRows: '1fr' }}>
                      {catalogImages.map((img) => (
                         <div key={img.id} className="contents">
-                           <div
-                              className="min-h-[360px] md:min-h-0 rounded-[1.5rem] overflow-hidden border border-neutral-100 shadow-sm h-full"
-                              style={{
-                                 breakInside: 'avoid',
-                                 pageBreakInside: 'avoid',
-                              }}>
-                              <img
-                                 src={img.src}
-                                 alt={img.alt}
-                                 className="w-full h-full object-cover"
-                              />
-                           </div>
+                           {renderWatchCard({
+                              img,
+                              className: 'min-h-[360px] md:min-h-0 h-full',
+                              onClick:
+                                 currentStep === 1
+                                    ? () => setActiveCatalogImageId(img.id)
+                                    : undefined,
+                           })}
                            {hasPageBreakAfter(img.id) &&
                               renderPageBreakMarker(`mosaic-small-${img.id}`)}
                         </div>
@@ -519,26 +720,22 @@ const BuilderPage = () => {
                            className="w-full h-full object-cover"
                         />
                      </div>
-                     <div className="grid grid-rows-2 gap-4 min-h-[780px]">
-                        {catalogImages.slice(1).map((img) => (
-                           <div key={img.id} className="contents">
-                              <div
-                                 className="rounded-[1.5rem] overflow-hidden border border-neutral-100 shadow-sm min-h-[383px]"
-                                 style={{
-                                    breakInside: 'avoid',
-                                    pageBreakInside: 'avoid',
-                                 }}>
-                                 <img
-                                    src={img.src}
-                                    alt={img.alt}
-                                    className="w-full h-full object-cover"
-                                 />
-                              </div>
-                              {hasPageBreakAfter(img.id) &&
-                                 renderPageBreakMarker(`mosaic-mid-${img.id}`)}
-                           </div>
-                        ))}
-                     </div>
+                  <div className="grid grid-rows-2 gap-4 min-h-[780px]">
+                     {catalogImages.slice(1).map((img) => (
+                        <div key={img.id} className="contents">
+                           {renderWatchCard({
+                              img,
+                              className: 'rounded-[1.5rem] min-h-[383px]',
+                              onClick:
+                                 currentStep === 1
+                                    ? () => setActiveCatalogImageId(img.id)
+                                    : undefined,
+                           })}
+                           {hasPageBreakAfter(img.id) &&
+                              renderPageBreakMarker(`mosaic-mid-${img.id}`)}
+                        </div>
+                     ))}
+                  </div>
                   </div>
                );
             }
@@ -547,26 +744,21 @@ const BuilderPage = () => {
                <div className="grid grid-cols-2 md:grid-cols-4 auto-rows-[180px] md:auto-rows-[220px] gap-4 min-h-[780px]">
                   {catalogImages.map((img, idx) => (
                      <div key={img.id} className="contents">
-                        <div
-                           className={`rounded-[1.5rem] overflow-hidden border border-neutral-100 shadow-sm ${
+                        {renderWatchCard({
+                           img,
+                           className:
                               catalogImages.length === 4
                                  ? idx === 0 || idx === 3
-                                    ? 'col-span-2 row-span-2'
-                                    : 'col-span-1 row-span-1'
+                                    ? 'col-span-2 row-span-2 rounded-[1.5rem]'
+                                    : 'col-span-1 row-span-1 rounded-[1.5rem]'
                                  : idx % 4 === 0
-                                   ? 'col-span-2 row-span-2'
-                                   : 'col-span-1 row-span-1'
-                           }`}
-                           style={{
-                              breakInside: 'avoid',
-                              pageBreakInside: 'avoid',
-                           }}>
-                           <img
-                              src={img.src}
-                              alt={img.alt}
-                              className="w-full h-full object-cover"
-                           />
-                        </div>
+                                   ? 'col-span-2 row-span-2 rounded-[1.5rem]'
+                                   : 'col-span-1 row-span-1 rounded-[1.5rem]',
+                           onClick:
+                              currentStep === 1
+                                 ? () => setActiveCatalogImageId(img.id)
+                                 : undefined,
+                        })}
                         {hasPageBreakAfter(img.id) &&
                            renderPageBreakMarker(`mosaic-large-${img.id}`)}
                      </div>
@@ -574,28 +766,30 @@ const BuilderPage = () => {
                </div>
             );
          case 'minimal':
-            if (isSingleImage) {
+           if (isSingleImage) {
                return (
                   <div className="min-h-[920px] flex flex-col items-center justify-center gap-10 py-8">
                      <div className="w-full max-w-4xl">
-                        <div
-                           className="relative rounded-[2.5rem] overflow-hidden min-h-[780px] flex items-center justify-center p-8 md:p-12"
-                           style={{
-                              breakInside: 'avoid',
-                              pageBreakInside: 'avoid',
-                           }}>
-                           <img
-                              src={catalogImages[0]?.src}
-                              alt={catalogImages[0]?.alt}
-                              className="w-full h-full max-h-[720px] object-contain drop-shadow-2xl"
-                           />
-                        </div>
+                        {renderWatchCard({
+                           img: catalogImages[0],
+                           className:
+                              'relative rounded-[2.5rem] min-h-[780px] flex items-center justify-center p-8 md:p-12',
+                           imageClassName:
+                              'w-full h-full max-h-[720px] object-contain drop-shadow-2xl',
+                           onClick:
+                              currentStep === 1
+                                 ? () =>
+                                      setActiveCatalogImageId(
+                                         catalogImages[0]?.id,
+                                      )
+                                 : undefined,
+                        })}
                         {hasPageBreakAfter(catalogImages[0]?.id) &&
                            renderPageBreakMarker(
                               `minimal-single-${catalogImages[0]?.id}`,
                            )}
                      </div>
-                     <div className="text-center">
+                     <div className="text-center pdf-item">
                         <h2
                            className="text-3xl md:text-5xl font-light italic text-[#c09a74]"
                            style={{ fontFamily: "'Playfair Display', serif" }}>
@@ -604,6 +798,9 @@ const BuilderPage = () => {
                         <p className="mt-3 text-[10px] md:text-xs uppercase tracking-[0.35em] text-neutral-400 font-bold">
                            {catalogImages[0]?.brand}
                         </p>
+                        <p className="mt-2 text-sm font-bold text-black">
+                           {formatPrice(catalogImages[0]?.mrp)}
+                        </p>
                      </div>
                   </div>
                );
@@ -611,28 +808,26 @@ const BuilderPage = () => {
 
             return (
                <div className="space-y-8">
-                  <div className="aspect-[16/9] rounded-3xl overflow-hidden border border-neutral-100 shadow-md">
-                     <img
-                        src={catalogImages[0]?.src}
-                        alt={catalogImages[0]?.alt}
-                        className="w-full h-full object-cover"
-                     />
-                  </div>
+                  {renderWatchCard({
+                     img: catalogImages[0],
+                     className: 'aspect-[16/9] rounded-3xl shadow-md',
+                     onClick:
+                        currentStep === 1
+                           ? () => setActiveCatalogImageId(catalogImages[0]?.id)
+                           : undefined,
+                  })}
                   <div className="grid grid-cols-3 gap-4">
                      {catalogImages.slice(1).map((img) => (
                         <div key={img.id} className="contents">
-                           <div
-                              className="aspect-square rounded-xl overflow-hidden border border-neutral-100 shadow-sm"
-                              style={{
-                                 breakInside: 'avoid',
-                                 pageBreakInside: 'avoid',
-                              }}>
-                              <img
-                                 src={img.src}
-                                 alt={img.alt}
-                                 className="w-full h-full object-cover"
-                              />
-                           </div>
+                           {renderWatchCard({
+                              img,
+                              className: 'aspect-square rounded-xl shadow-sm',
+                              compact: true,
+                              onClick:
+                                 currentStep === 1
+                                    ? () => setActiveCatalogImageId(img.id)
+                                    : undefined,
+                           })}
                            {hasPageBreakAfter(img.id) &&
                               renderPageBreakMarker(`minimal-${img.id}`)}
                         </div>
@@ -643,7 +838,7 @@ const BuilderPage = () => {
          case 'custom':
             return (
                <div className="w-full h-[1000px] relative border-2 border-dashed border-neutral-100 rounded-[2rem]">
-                  {builderImages.map((img) => (
+                 {builderImages.map((img) => (
                      <Rnd
                         key={img.id}
                         size={{ width: img.width, height: img.height }}
@@ -660,17 +855,17 @@ const BuilderPage = () => {
                         }}
                         bounds="parent"
                         className="group">
-                        <div className="w-full h-full rounded-xl overflow-hidden border border-white shadow-lg relative">
-                           <img
-                              src={img.src}
-                              alt={img.alt}
-                              className="w-full h-full object-cover pointer-events-none"
-                           />
-                           <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <span className="text-[10px] text-white uppercase tracking-widest font-bold">
-                                 Resize / Drag
-                              </span>
-                           </div>
+                        {renderWatchCard({
+                           img,
+                           className: 'w-full h-full rounded-xl shadow-lg',
+                           compact: true,
+                           imageClassName:
+                              'w-full h-full object-cover pointer-events-none',
+                        })}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                           <span className="text-[10px] text-white uppercase tracking-widest font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                              Resize / Drag
+                           </span>
                         </div>
                      </Rnd>
                   ))}
@@ -687,10 +882,116 @@ const BuilderPage = () => {
                   (el) => el.type === 'image',
                );
 
+               const renderArrow = (el) => {
+                  const { width, height, arrowStyle, color } = el;
+                  const strokeWidth = 2;
+                  const headSize = 10;
+
+                  const ArrowSVG = ({ children }) => (
+                     <svg
+                        width="100%"
+                        height="100%"
+                        viewBox={`0 0 ${width} ${height}`}
+                        preserveAspectRatio="none">
+                        {children}
+                        <path
+                           d={`M ${width - headSize} ${height / 2 - headSize / 2} L ${width} ${height / 2} L ${width - headSize} ${height / 2 + headSize / 2}`}
+                           fill="none"
+                           stroke={color}
+                           strokeWidth={strokeWidth}
+                           strokeLinecap="round"
+                           strokeLinejoin="round"
+                        />
+                     </svg>
+                  );
+
+                  if (arrowStyle === 'straight') {
+                     return (
+                        <ArrowSVG>
+                           <line
+                              x1="0"
+                              y1={height / 2}
+                              x2={width - headSize}
+                              y2={height / 2}
+                              stroke={color}
+                              strokeWidth={strokeWidth}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                           />
+                        </ArrowSVG>
+                     );
+                  }
+
+                  if (arrowStyle === 'spring') {
+                     const points = [];
+                     const steps = 100;
+                     const amplitude = height / 3;
+                     for (let i = 0; i <= steps; i++) {
+                        const x = (i / steps) * (width - headSize);
+                        const y =
+                           height / 2 +
+                           Math.sin((i / steps) * Math.PI * 8) * amplitude;
+                        points.push(`${x},${y}`);
+                     }
+                     return (
+                        <ArrowSVG>
+                           <polyline
+                              points={points.join(' ')}
+                              fill="none"
+                              stroke={color}
+                              strokeWidth={strokeWidth}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                           />
+                        </ArrowSVG>
+                     );
+                  }
+
+                  if (arrowStyle === 'combination') {
+                     const midX = (width - headSize) * 0.6;
+                     const points = [];
+                     const steps = 60;
+                     const amplitude = height / 3;
+                     for (let i = 0; i <= steps; i++) {
+                        const x = (i / steps) * midX;
+                        const y =
+                           height / 2 +
+                           Math.sin((i / steps) * Math.PI * 6) * amplitude;
+                        points.push(`${x},${y}`);
+                     }
+                     return (
+                        <ArrowSVG>
+                           <polyline
+                              points={points.join(' ')}
+                              fill="none"
+                              stroke={color}
+                              strokeWidth={strokeWidth}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                           />
+                           <line
+                              x1={midX}
+                              y1={height / 2}
+                              x2={width - headSize}
+                              y2={height / 2}
+                              stroke={color}
+                              strokeWidth={strokeWidth}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                           />
+                        </ArrowSVG>
+                     );
+                  }
+                  return null;
+               };
+
                return (
                   <div
                      className="relative mx-auto bg-white shadow-2xl"
-                     style={{ width: '800px', height: '1131px' }}>
+                     style={{
+                        width: '800px',
+                        height: `${template.canvasHeight || 1131}px`,
+                     }}>
                      {activeTemplateElements.map((el) => {
                         if (el.type === 'image') {
                            // Find which image to show in this placeholder
@@ -732,7 +1033,10 @@ const BuilderPage = () => {
                                           alt={imageToShow.alt}
                                           className="w-full h-full object-cover"
                                        />
-                                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                       {renderWatchMeta(imageToShow, {
+                                          compact: true,
+                                       })}
+                                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center">
                                           <span className="text-[10px] text-white uppercase font-bold tracking-widest">
                                              Change Image
                                           </span>
@@ -743,6 +1047,21 @@ const BuilderPage = () => {
                                        <ImageIcon size={24} />
                                     </div>
                                  )}
+                              </div>
+                           );
+                        } else if (el.type === 'arrow') {
+                           return (
+                              <div
+                                 key={el.id}
+                                 style={{
+                                    position: 'absolute',
+                                    left: el.x,
+                                    top: el.y,
+                                    width: el.width,
+                                    height: el.height,
+                                 }}
+                                 className="flex items-center justify-center">
+                                 {renderArrow(el)}
                               </div>
                            );
                         } else {
@@ -1138,12 +1457,24 @@ const BuilderPage = () => {
                               {catalogImages.map((img) => (
                                  <div
                                     key={img.id}
-                                    className="flex items-center gap-2 bg-neutral-100 px-3 py-1.5 rounded-full group border border-neutral-200">
-                                    <span className="text-[10px] text-neutral-600 font-medium">
+                                    onClick={() => setActiveCatalogImageId(img.id)}
+                                    className={`flex items-center gap-2 bg-neutral-100 px-3 py-1.5 rounded-full group border transition-all cursor-pointer ${
+                                       activeCatalogImageId === img.id
+                                          ? 'border-[#c09a74] bg-[#c09a74]/10 shadow-sm'
+                                          : 'border-neutral-200'
+                                    }`}>
+                                    <span className="text-[10px] text-neutral-600 font-medium max-w-[160px] truncate">
                                        {img.alt}
                                     </span>
                                     <button
                                        onClick={() => {
+                                          if (activeCatalogImageId === img.id) {
+                                             setActiveCatalogImageId(
+                                                catalogImages.find(
+                                                   (item) => item.id !== img.id,
+                                                )?.id || null,
+                                             );
+                                          }
                                           setCatalogImages((prev) =>
                                              prev.filter(
                                                 (i) => i.id !== img.id,
@@ -1175,6 +1506,149 @@ const BuilderPage = () => {
                               </button>
                            </div>
                         </div>
+
+                        {activeCatalogImage && (
+                           <div className="mt-6 rounded-2xl border border-neutral-200 p-4 space-y-4">
+                             <div className="flex items-center justify-between gap-3">
+                                 <div>
+                                    <p className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                       Selected Watch
+                                    </p>
+                                    <h4
+                                       className="text-base font-bold text-black mt-1 whitespace-normal break-words"
+                                       style={{ overflowWrap: 'anywhere' }}>
+                                       {activeCatalogImage.alt}
+                                    </h4>
+                                 </div>
+                                 <div className="text-right">
+                                    <p className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                       Preview Price
+                                    </p>
+                                    <p className="text-sm font-bold text-[#c09a74]">
+                                       {formatPrice(activeCatalogImage.mrp)}
+                                    </p>
+                                 </div>
+                              </div>
+
+                              <div className="aspect-video rounded-xl overflow-hidden border border-neutral-100 bg-neutral-50">
+                                 <img
+                                    src={activeCatalogImage.src}
+                                    alt={activeCatalogImage.alt}
+                                    className="w-full h-full object-cover"
+                                 />
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-3">
+                                 <div className="space-y-1.5">
+                                    <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                       Model Name
+                                    </label>
+                                    <input
+                                       type="text"
+                                       value={activeCatalogImage.alt || ''}
+                                       onChange={(e) =>
+                                          updateCatalogImage(
+                                             activeCatalogImage.id,
+                                             { alt: e.target.value },
+                                          )
+                                       }
+                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c09a74]"
+                                    />
+                                 </div>
+
+                                 <div className="space-y-1.5">
+                                    <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                       Brand
+                                    </label>
+                                    <input
+                                       type="text"
+                                       value={activeCatalogImage.brand || ''}
+                                       onChange={(e) =>
+                                          updateCatalogImage(
+                                             activeCatalogImage.id,
+                                             { brand: e.target.value },
+                                          )
+                                       }
+                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c09a74]"
+                                    />
+                                 </div>
+
+                                 <div className="space-y-1.5">
+                                    <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                       Price
+                                    </label>
+                                    <input
+                                       type="number"
+                                       min="0"
+                                       value={activeCatalogImage.mrp ?? ''}
+                                       onChange={(e) =>
+                                          updateCatalogImage(
+                                             activeCatalogImage.id,
+                                             { mrp: Number(e.target.value) },
+                                          )
+                                       }
+                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c09a74]"
+                                       placeholder="0"
+                                    />
+                                 </div>
+
+                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <div className="space-y-1.5">
+                                       <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                          Color
+                                       </label>
+                                       <input
+                                          type="text"
+                                          value={activeCatalogImage.color || ''}
+                                          onChange={(e) =>
+                                             updateCatalogImage(
+                                                activeCatalogImage.id,
+                                                { color: e.target.value },
+                                             )
+                                          }
+                                          className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c09a74]"
+                                          placeholder="e.g. Black"
+                                       />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                       <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                          Dial Color
+                                       </label>
+                                       <input
+                                          type="text"
+                                          value={activeCatalogImage.dialColor || ''}
+                                          onChange={(e) =>
+                                             updateCatalogImage(
+                                                activeCatalogImage.id,
+                                                { dialColor: e.target.value },
+                                             )
+                                          }
+                                          className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c09a74]"
+                                          placeholder="e.g. Blue"
+                                       />
+                                    </div>
+                                 </div>
+
+                                 <div className="space-y-1.5">
+                                    <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                       Image URL
+                                    </label>
+                                    <input
+                                       type="url"
+                                       value={activeCatalogImage.src || ''}
+                                       onChange={(e) =>
+                                          updateCatalogImage(
+                                             activeCatalogImage.id,
+                                             { src: e.target.value },
+                                          )
+                                       }
+                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#c09a74]"
+                                       placeholder="https://..."
+                                    />
+                                 </div>
+                              </div>
+                           </div>
+                        )}
                      </div>
                   )}
 
@@ -1480,7 +1954,7 @@ const BuilderPage = () => {
                                  updateTextElement(el.id, { x: d.x, y: d.y })
                               }
                               disableDragging={currentStep !== 2}
-                              className={`!pointer-events-auto group ${editingTextId === el.id ? 'ring-2 ring-[#c09a74] ring-offset-4' : ''}`}>
+                              className={`!pointer-events-auto group pdf-item ${editingTextId === el.id ? 'ring-2 ring-[#c09a74] ring-offset-4' : ''}`}>
                               <div
                                  onClick={() =>
                                     currentStep === 2 && setEditingTextId(el.id)

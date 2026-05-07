@@ -40,6 +40,16 @@ export const insertWatch = async (watch) => {
    return data;
 };
 
+export const insertWatches = async (watches) => {
+   const { data, error } = await supabase
+      .from('watches')
+      .insert(watches)
+      .select(watchSelectFields);
+
+   if (error) throw error;
+   return data;
+};
+
 export const uploadImage = async (file) => {
    const fileExt = file.name.split('.').pop();
    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;

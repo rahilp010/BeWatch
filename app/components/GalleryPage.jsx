@@ -1,10 +1,18 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useTransition } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Check, LayoutPanelTop, Loader2, Trash2, Layout } from 'lucide-react';
+import {
+   Check,
+   LayoutPanelTop,
+   Loader2,
+   Trash2,
+   Layout,
+   MoreHorizontal,
+} from 'lucide-react';
 import {
    insertWatch,
+   insertWatches,
    uploadImage,
    deleteWatches,
    deleteImages,
@@ -13,7 +21,15 @@ import { useWatches, watchesQueryKey } from '../hooks/useWatches';
 import { useBrands, brandsQueryKey } from '../hooks/useBrands';
 import { insertBrand, uploadBrandLogo } from '../lib/supabaseClient';
 import TemplateCreator from './TemplateCreator';
-import { Plus, X as XIcon, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
+import {
+   Plus,
+   X as XIcon,
+   Image as ImageIcon,
+   CheckCircle2,
+} from 'lucide-react';
+
+const normalizeBrandName = (value) =>
+   (value || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 const GalleryPage = () => {
    const navigate = useNavigate();
@@ -23,21 +39,24 @@ const GalleryPage = () => {
    const [isModalOpen, setIsModalOpen] = useState(false);
    const [isBrandModalOpen, setIsBrandModalOpen] = useState(false);
 
-   const { data: brandsData, isLoading: isLoadingBrands, refetch: refetchBrands } = useBrands({
-      enabled: isModalOpen || isBrandModalOpen
+   const { data: brandsData, isLoading: isLoadingBrands } = useBrands({
+      enabled: true,
    });
    const [isTemplateCreatorOpen, setIsTemplateCreatorOpen] = useState(false);
    const [dragActive, setDragActive] = useState(false);
    const [selectionMode, setSelectionMode] = useState(false);
    const [selectedIds, setSelectedIds] = useState([]);
-   const [imageFile, setImageFile] = useState(null);
    const [brandLogoFile, setBrandLogoFile] = useState(null);
    const [isSubmitting, setIsSubmitting] = useState(false);
    const [isAddingBrand, setIsAddingBrand] = useState(false);
    const [isDeleting, setIsDeleting] = useState(false);
    const [notification, setNotification] = useState(null); // { type, title, message, onConfirm }
    const [isMobile, setIsMobile] = useState(false);
+   const [isFilterPending, startFilterTransition] = useTransition();
    const hasHydratedWatches = useRef(false);
+
+   const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
+   const filterMenuRef = useRef(null);
 
    useEffect(() => {
       const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -46,14 +65,35 @@ const GalleryPage = () => {
       return () => window.removeEventListener('resize', checkMobile);
    }, []);
 
+   useEffect(() => {
+      const handleClickOutside = (event) => {
+         if (
+            filterMenuRef.current &&
+            !filterMenuRef.current.contains(event.target)
+         ) {
+            setIsFilterMenuOpen(false);
+         }
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+         document.removeEventListener('mousedown', handleClickOutside);
+   }, []);
+
    const [formData, setFormData] = useState({
-      modelName: '',
       brand: 'Titan',
-      mrp: '',
-      color: '',
-      dialColor: '',
-      image: '',
    });
+
+   const [watchItems, setWatchItems] = useState([
+      {
+         id: Date.now(),
+         modelName: '',
+         mrp: '',
+         color: '',
+         dialColor: '',
+         image: '',
+         imageFile: null,
+      },
+   ]);
 
    const [images, setImages] = useState([
       {
@@ -141,20 +181,32 @@ const GalleryPage = () => {
    });
 
    const availableBrands = useMemo(() => {
-      // Get unique brands from current images
-      const brandsInGallery = images.map((img) => img.brand).filter(Boolean);
-      // Get unique brands from the brands table
-      const brandsInDb = (brandsData || []).map((b) => b.name);
+      const brandMap = new Map();
 
-      // Combine and remove duplicates
-      const uniqueBrands = Array.from(
-         new Set([...brandsInGallery, ...brandsInDb]),
-      ).sort();
+      const registerBrand = (brand) => {
+         const displayName = (brand || '').trim().replace(/\s+/g, ' ');
+         const normalized = normalizeBrandName(displayName);
 
-      return ['All', ...uniqueBrands];
+         if (!displayName || !normalized || brandMap.has(normalized)) return;
+         brandMap.set(normalized, displayName);
+      };
+
+      images.forEach((img) => registerBrand(img.brand));
+      (brandsData || []).forEach((brand) => registerBrand(brand.name));
+
+      return [
+         'All',
+         ...Array.from(brandMap.values()).sort((a, b) => a.localeCompare(b)),
+      ];
    }, [images, brandsData]);
 
-  useEffect(() => {
+   const handleFilterChange = (brand) => {
+      startFilterTransition(() => {
+         setFilter(brand);
+      });
+   };
+
+   useEffect(() => {
       if (!watchData?.items) return;
       if (hasHydratedWatches.current) return;
       hasHydratedWatches.current = true;
@@ -183,6 +235,48 @@ const GalleryPage = () => {
       setFormData((prev) => ({ ...prev, [name]: value }));
    };
 
+   const handleItemInputChange = (id, e) => {
+      const { name, value } = e.target;
+      setWatchItems((prev) =>
+         prev.map((item) =>
+            item.id === id ? { ...item, [name]: value } : item,
+         ),
+      );
+   };
+
+   const addWatchItem = () => {
+      setWatchItems((prev) => [
+         ...prev,
+         {
+            id: Date.now(),
+            modelName: '',
+            mrp: '',
+            color: '',
+            dialColor: '',
+            image: '',
+            imageFile: null,
+         },
+      ]);
+   };
+
+   const removeWatchItem = (id) => {
+      if (watchItems.length === 1) {
+         setWatchItems([
+            {
+               id: Date.now(),
+               modelName: '',
+               mrp: '',
+               color: '',
+               dialColor: '',
+               image: '',
+               imageFile: null,
+            },
+         ]);
+         return;
+      }
+      setWatchItems((prev) => prev.filter((item) => item.id !== id));
+   };
+
    // Drag & Drop Handlers
    const handleDrag = (e) => {
       e.preventDefault();
@@ -198,100 +292,140 @@ const GalleryPage = () => {
       e.preventDefault();
       e.stopPropagation();
       setDragActive(false);
-      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-         handleFile(e.dataTransfer.files[0]);
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+         handleFiles(e.dataTransfer.files);
       }
    };
 
    const handleChangeFile = (e) => {
       e.preventDefault();
-      if (e.target.files && e.target.files[0]) {
-         handleFile(e.target.files[0]);
+      if (e.target.files && e.target.files.length > 0) {
+         handleFiles(e.target.files);
       }
    };
 
-   const handleFile = (file) => {
-      setImageFile(file);
-      const localUrl = URL.createObjectURL(file);
-      setFormData((prev) => ({ ...prev, image: localUrl }));
+   const handleFiles = (files) => {
+      const newItems = Array.from(files).map((file, index) => ({
+         id: Date.now() + index,
+         modelName: file.name.split('.')[0].replace(/[-_]/g, ' '),
+         mrp: '',
+         color: '',
+         dialColor: '',
+         image: URL.createObjectURL(file),
+         imageFile: file,
+      }));
+
+      setWatchItems((prev) => {
+         const isEmpty =
+            prev.length === 1 && !prev[0].image && !prev[0].modelName;
+         return isEmpty ? newItems : [...prev, ...newItems];
+      });
    };
 
-   const clearImage = () => {
-      setImageFile(null);
-      setFormData((prev) => ({ ...prev, image: '' }));
+   const clearImage = (id) => {
+      setWatchItems((prev) =>
+         prev.map((item) =>
+            item.id === id ? { ...item, image: '', imageFile: null } : item,
+         ),
+      );
    };
 
    const handleSubmit = async (e) => {
       e.preventDefault();
-
       setIsSubmitting(true);
 
-      const tempId = `temp-${Date.now()}`;
-      const optimisticWatch = {
-         id: tempId,
-         src:
-            formData.image ||
-            'https://images.unsplash.com/photo-1522338242992-e1a54906a8da?q=80&w=800&auto=format&fit=crop',
-         alt: formData.modelName,
-         brand: formData.brand,
-         mrp: Number(formData.mrp) || 0,
-         color: formData.color,
-         dialColor: formData.dialColor,
-         className: 'md:col-span-1 md:row-span-1',
-         isSyncing: true,
-      };
+      const itemsToSync = watchItems.filter(
+         (item) => item.image || item.modelName,
+      );
+      if (itemsToSync.length === 0) {
+         setIsSubmitting(false);
+         return;
+      }
 
       const previousCache = queryClient.getQueryData(watchesQueryKey);
+      const currentBrand = formData.brand;
 
+      // Optimistic watches for the UI
+      const optimisticWatches = itemsToSync.map((item) => ({
+         id: `temp-${item.id}`,
+         src:
+            item.image ||
+            'https://images.unsplash.com/photo-1522338242992-e1a54906a8da?q=80&w=800&auto=format&fit=crop',
+         alt: item.modelName,
+         brand: currentBrand,
+         mrp: Number(item.mrp) || 0,
+         color: item.color,
+         dialColor: item.dialColor,
+         className: 'md:col-span-1 md:row-span-1',
+         isSyncing: true,
+      }));
+
+      // Update Query Cache
       queryClient.setQueryData(watchesQueryKey, (current) => {
          const items = current?.items ?? [];
-         const nextItems = [optimisticWatch, ...items.filter((item) => item.id !== tempId)];
          return {
-            items: nextItems,
-            count: (current?.count ?? 0) + 1,
+            items: [...optimisticWatches, ...items],
+            count: (current?.count ?? 0) + optimisticWatches.length,
          };
       });
 
-      setImages((prev) => [optimisticWatch, ...prev]);
+      // Update Local State
+      setImages((prev) => [...optimisticWatches, ...prev]);
       setSelectionMode(false);
       setSelectedIds([]);
       setIsModalOpen(false);
 
-      const currentFormData = { ...formData };
-      const currentImageFile = imageFile;
-
-      setFormData({
-         modelName: '',
-         brand: 'Titan',
-         mrp: '',
-         color: '',
-         dialColor: '',
-         image: '',
-      });
-      setImageFile(null);
+      // Reset Modal State
+      setFormData({ brand: currentBrand });
+      setWatchItems([
+         {
+            id: Date.now(),
+            modelName: '',
+            mrp: '',
+            color: '',
+            dialColor: '',
+            image: '',
+            imageFile: null,
+         },
+      ]);
 
       try {
-         let imageUrl = currentFormData.image;
-         if (currentImageFile) {
-            imageUrl = await uploadImage(currentImageFile);
-         }
+         // 1. Upload all images in parallel
+         const syncedItems = await Promise.all(
+            itemsToSync.map(async (item) => {
+               let imageUrl = item.image;
+               if (item.imageFile) {
+                  imageUrl = await uploadImage(item.imageFile);
+               }
+               return {
+                  model_name: item.modelName,
+                  brand: currentBrand,
+                  mrp: Number(item.mrp) || 0,
+                  color: item.color,
+                  dial_color: item.dialColor,
+                  image_url:
+                     imageUrl ||
+                     'https://images.unsplash.com/photo-1522338242992-e1a54906a8da?q=80&w=800&auto=format&fit=crop',
+                  tempId: `temp-${item.id}`,
+               };
+            }),
+         );
 
-         const dbWatch = await insertWatch({
-            model_name: currentFormData.modelName,
-            brand: currentFormData.brand,
-            mrp: Number(currentFormData.mrp) || 0,
-            color: currentFormData.color,
-            dial_color: currentFormData.dialColor,
-            image_url: imageUrl || optimisticWatch.src,
-         });
+         // 2. Bulk insert watches
+         const dbWatches = await insertWatches(
+            syncedItems.map(({ tempId, ...rest }) => rest),
+         );
 
+         // 3. Map DB results back to temp IDs and update cache
          queryClient.setQueryData(watchesQueryKey, (current) => {
             if (!current) return current;
             const items = current.items ?? [];
-            return {
-               ...current,
-               items: items.map((img) =>
-                  img.id === tempId
+            let updatedItems = [...items];
+
+            syncedItems.forEach((synced, idx) => {
+               const dbWatch = dbWatches[idx];
+               updatedItems = updatedItems.map((img) =>
+                  img.id === synced.tempId
                      ? {
                           ...img,
                           id: dbWatch.id,
@@ -304,38 +438,49 @@ const GalleryPage = () => {
                           isSyncing: false,
                        }
                      : img,
-               ),
-            };
+               );
+            });
+
+            return { ...current, items: updatedItems };
          });
 
-         setImages((prev) =>
-            prev.map((img) =>
-               img.id === tempId
-                  ? {
-                       ...img,
-                       id: dbWatch.id,
-                       src: dbWatch.image_url,
-                       alt: dbWatch.model_name,
-                       brand: dbWatch.brand,
-                       mrp: dbWatch.mrp,
-                       color: dbWatch.color,
-                       dialColor: dbWatch.dial_color,
-                       isSyncing: false,
-                    }
-                  : img,
-            ),
-         );
+         // Update Local Images State
+         setImages((prev) => {
+            let updated = [...prev];
+            syncedItems.forEach((synced, idx) => {
+               const dbWatch = dbWatches[idx];
+               updated = updated.map((img) =>
+                  img.id === synced.tempId
+                     ? {
+                          ...img,
+                          id: dbWatch.id,
+                          src: dbWatch.image_url,
+                          alt: dbWatch.model_name,
+                          brand: dbWatch.brand,
+                          mrp: dbWatch.mrp,
+                          color: dbWatch.color,
+                          dialColor: dbWatch.dial_color,
+                          isSyncing: false,
+                       }
+                     : img,
+               );
+            });
+            return updated;
+         });
       } catch (err) {
-         console.error('Failed to sync watch with Supabase:', err);
+         console.error('Failed to sync watches with Supabase:', err);
          if (previousCache) {
             queryClient.setQueryData(watchesQueryKey, previousCache);
          }
-         setImages((prev) => prev.filter((img) => img.id !== tempId));
+         // Restore previous images state or just clear the syncing ones
+         setImages((prev) =>
+            prev.filter((img) => !optimisticWatches.find((o) => o.id === img.id)),
+         );
          setNotification({
             type: 'error',
             title: 'Sync Failed',
             message:
-               'Failed to save watch to cloud. It has been removed from the session.',
+               'Failed to save some timepieces to cloud. They have been removed from the view.',
          });
       } finally {
          setIsSubmitting(false);
@@ -344,7 +489,8 @@ const GalleryPage = () => {
 
    const handleBrandSubmit = async (e) => {
       e.preventDefault();
-      if (!brandFormData.name) return;
+      const brandName = brandFormData.name.trim().replace(/\s+/g, ' ');
+      if (!brandName) return;
 
       setIsAddingBrand(true);
       try {
@@ -354,20 +500,18 @@ const GalleryPage = () => {
          }
 
          await insertBrand({
-            name: brandFormData.name,
+            name: brandName,
             logo_url: logoUrl,
          });
 
          setBrandFormData({ name: '', logoUrl: '' });
          setBrandLogoFile(null);
-         
+         await queryClient.invalidateQueries({ queryKey: brandsQueryKey });
+
          setNotification({
             type: 'success',
             title: 'Brand Added',
-            message: `"${brandFormData.name}" has been successfully added to your brands.`,
-            onAcknowledge: () => {
-               queryClient.invalidateQueries({ queryKey: brandsQueryKey });
-            }
+            message: `"${brandName}" has been successfully added to your brands.`,
          });
          // Don't close modal, let user add more or see the list
       } catch (err) {
@@ -375,7 +519,8 @@ const GalleryPage = () => {
          setNotification({
             type: 'error',
             title: 'Failed to Add Brand',
-            message: 'An error occurred while saving the brand. It might already exist.',
+            message:
+               'An error occurred while saving the brand. It might already exist.',
          });
       } finally {
          setIsAddingBrand(false);
@@ -420,8 +565,13 @@ const GalleryPage = () => {
    };
 
    const handleSaveTemplate = (newTemplate) => {
-      const savedTemplates = JSON.parse(localStorage.getItem('custom-templates') || '[]');
-      localStorage.setItem('custom-templates', JSON.stringify([...savedTemplates, newTemplate]));
+      const savedTemplates = JSON.parse(
+         localStorage.getItem('custom-templates') || '[]',
+      );
+      localStorage.setItem(
+         'custom-templates',
+         JSON.stringify([...savedTemplates, newTemplate]),
+      );
       setNotification({
          type: 'success',
          title: 'Template Saved',
@@ -527,21 +677,29 @@ const GalleryPage = () => {
    const filteredImages =
       filter === 'All'
          ? images
-         : images.filter((img) => img.brand === filter);
-
-   const containerVariants = {
-      hidden: { opacity: 0 },
-      visible: { opacity: 1, transition: { staggerChildren: 0.1 } },
-   };
+         : images.filter(
+              (img) =>
+                 normalizeBrandName(img.brand) === normalizeBrandName(filter),
+           );
 
    const itemVariants = {
-      hidden: { opacity: 0, scale: 0.9 },
-      visible: {
+      hidden: { opacity: 0, scale: 0.96, y: 8 },
+      visible: (index = 0) => ({
          opacity: 1,
          scale: 1,
-         transition: { duration: 0.5, ease: 'easeOut' },
+         y: 0,
+         transition: {
+            duration: 0.22,
+            ease: 'easeOut',
+            delay: index * 0.03,
+         },
+      }),
+      exit: {
+         opacity: 0,
+         scale: 0.96,
+         y: -6,
+         transition: { duration: 0.16, ease: 'easeInOut' },
       },
-      exit: { opacity: 0, scale: 0.9, transition: { duration: 0.3 } },
    };
 
    return (
@@ -584,14 +742,13 @@ const GalleryPage = () => {
                {!selectionMode && (
                   <button
                      onClick={() => setIsTemplateCreatorOpen(true)}
-                     className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400 group"
-                  >
+                     className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400 group">
                      <span className="text-lg font-light transition-transform duration-300 group-hover:scale-110">
                         <Layout size={18} />
                      </span>
-                     <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
+                     {/* <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
                         Add Templates
-                     </span>
+                     </span> */}
                   </button>
                )}
 
@@ -599,7 +756,7 @@ const GalleryPage = () => {
                   onClick={() => setIsModalOpen(true)}
                   className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400">
                   <span className="text-lg font-light transition-transform duration-300 group-hover:rotate-90">
-                     +
+                     <Plus size={18} />
                   </span>
                   <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
                      Add Watch
@@ -608,8 +765,8 @@ const GalleryPage = () => {
             </div>
          </motion.div>
 
-         <TemplateCreator 
-            isOpen={isTemplateCreatorOpen} 
+         <TemplateCreator
+            isOpen={isTemplateCreatorOpen}
             onClose={() => setIsTemplateCreatorOpen(false)}
             onSave={handleSaveTemplate}
          />
@@ -633,19 +790,86 @@ const GalleryPage = () => {
             <motion.div
                initial={{ opacity: 0, y: 20 }}
                animate={{ opacity: 1, y: 0 }}
-               className="flex flex-wrap gap-3">
-               {availableBrands.map((brand) => (
+               aria-busy={isFilterPending}
+               className={`flex flex-wrap items-center gap-3 transition-opacity duration-150 ${
+                  isFilterPending ? 'opacity-80' : 'opacity-100'
+               }`}>
+               {/* Show first 5 pills including "All" */}
+               {availableBrands.slice(0, 5).map((brand) => {
+                  const isActive = filter === brand;
+                  return (
                   <button
                      key={brand}
-                     onClick={() => setFilter(brand)}
-                     className={`px-4 py-1.5 md:px-6 md:py-2 rounded-full text-[10px] md:text-xs uppercase tracking-widest font-bold transition-all duration-300 ${
-                        filter === brand
-                           ? 'bg-[#c09a74] text-white shadow-lg'
+                     onClick={() => handleFilterChange(brand)}
+                     className={`relative isolate overflow-hidden px-4 py-1.5 md:px-6 md:py-2 rounded-full text-[10px] md:text-xs uppercase tracking-widest font-bold transition-colors duration-200 whitespace-nowrap transform-gpu ${
+                        isActive
+                           ? 'text-white shadow-lg'
                            : 'bg-transparent text-[#505050] border border-[#505050]/20 hover:border-[#c09a74] hover:text-[#c09a74]'
-                     }`}>
-                     {brand}
+                     } ${isFilterPending ? 'pointer-events-none' : ''}`}>
+                     {isActive && (
+                        <motion.span
+                           layoutId="activeFilterPill"
+                           transition={{ type: 'spring', stiffness: 520, damping: 38 }}
+                           className="absolute inset-0 rounded-full bg-[#c09a74]"
+                        />
+                     )}
+                     <span className="relative z-10">{brand}</span>
                   </button>
-               ))}
+                  );
+               })}
+
+               {/* Overflow Menu for remaining brands */}
+               {availableBrands.length > 5 && (
+                  <div className="relative" ref={filterMenuRef}>
+                     <button
+                        onClick={() => setIsFilterMenuOpen(!isFilterMenuOpen)}
+                        className={`p-2 md:p-2.5 rounded-full transition-all duration-300 ${
+                           availableBrands.slice(5).includes(filter)
+                              ? 'bg-[#c09a74] text-white shadow-lg'
+                              : 'bg-transparent text-[#505050] border border-[#505050]/20 hover:border-[#c09a74] hover:text-[#c09a74]'
+                        }`}>
+                        <MoreHorizontal size={16} />
+                     </button>
+
+                     <AnimatePresence>
+                        {isFilterMenuOpen && (
+                           <motion.div
+                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                              className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-gray-100 py-2 z-[100] overflow-hidden">
+                              <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                {availableBrands.slice(5).map((brand) => {
+                                   const isActive = filter === brand;
+                                   return (
+                                   <button
+                                      key={brand}
+                                      onClick={() => {
+                                          handleFilterChange(brand);
+                                          setIsFilterMenuOpen(false);
+                                       }}
+                                       className={`relative isolate overflow-hidden w-full text-left px-5 py-3 text-[10px] md:text-xs uppercase tracking-widest font-bold transition-colors duration-200 ${
+                                          isActive
+                                             ? 'text-[#c09a74]'
+                                             : 'text-[#505050] hover:bg-gray-50 hover:text-[#c09a74]'
+                                       }`}>
+                                       {isActive && (
+                                          <motion.span
+                                             layoutId="activeFilterPill"
+                                             transition={{ type: 'spring', stiffness: 520, damping: 38 }}
+                                             className="absolute inset-0 bg-[#c09a74]/10"
+                                          />
+                                       )}
+                                       <span className="relative z-10">{brand}</span>
+                                    </button>
+                                   );
+                                })}
+                              </div>
+                           </motion.div>
+                        )}
+                     </AnimatePresence>
+                  </div>
+               )}
             </motion.div>
          </div>
 
@@ -883,138 +1107,228 @@ const GalleryPage = () => {
                      </button>
 
                      {/* LEFT PANEL: The Form */}
-                     <div className="bg-white rounded-[2rem] w-full lg:w-3/4 h-full overflow-y-auto shadow-2xl relative flex flex-col">
-                        <div className="p-8 md:p-12 flex-1">
-                           <h2
-                              className="text-3xl font-light italic text-[#c09a74] mb-8"
-                              style={{
-                                 fontFamily: "'Playfair Display', serif",
-                              }}>
-                              Add New Timepiece
-                           </h2>
+                     <div className="bg-white rounded-[2rem] w-full lg:w-2/3 h-full overflow-y-auto custom-scrollbar shadow-2xl relative flex flex-col border-r border-neutral-100">
+                        <div className="p-8 md:p-12 flex-1 flex flex-col">
+                           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+                              <h2
+                                 className="text-3xl font-light italic text-[#c09a74]"
+                                 style={{
+                                    fontFamily: "'Playfair Display', serif",
+                                 }}>
+                                 Add New Timepieces
+                              </h2>
 
-                           <form onSubmit={handleSubmit} className="space-y-8">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                 <div className="space-y-2">
-                                    <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
-                                       Model Name
+                              {/* GLOBAL BRAND SELECTOR */}
+                              <div className="flex flex-col gap-2 min-w-[240px]">
+                                 <div className="flex items-center justify-between">
+                                    <label className="text-[10px] uppercase tracking-[0.2em] font-bold text-[#505050]">
+                                       Collection Brand
                                     </label>
-                                    <input
-                                       required
-                                       type="text"
-                                       name="modelName"
-                                       value={formData.modelName}
-                                       onChange={handleInputChange}
-                                       placeholder="e.g. Maritime Pro"
-                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
-                                    />
+                                    <button
+                                       type="button"
+                                       onClick={() =>
+                                          setIsBrandModalOpen(true)
+                                       }
+                                       className="text-[#c09a74] hover:scale-110 transition-transform"
+                                       title="Add New Brand">
+                                       <Plus size={14} strokeWidth={3} />
+                                    </button>
                                  </div>
-                                 <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                       <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
-                                          Brand
-                                       </label>
-                                       <button
-                                          type="button"
-                                          onClick={() => setIsBrandModalOpen(true)}
-                                          className="text-[#c09a74] hover:scale-110 transition-transform"
-                                          title="Add New Brand"
-                                       >
-                                          <Plus size={16} strokeWidth={3} />
-                                       </button>
+                                 <div className="relative">
+                                    <select
+                                       name="brand"
+                                       value={formData.brand}
+                                       onChange={handleInputChange}
+                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm appearance-none cursor-pointer">
+                                       <option value="" disabled>
+                                          Select Brand
+                                       </option>
+                                       {availableBrands
+                                          .filter((b) => b !== 'All')
+                                          .map((brand) => (
+                                             <option
+                                                key={brand}
+                                                value={brand}>
+                                                {brand}
+                                             </option>
+                                          ))}
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-400">
+                                       <svg
+                                          className="w-4 h-4"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24">
+                                          <path
+                                             strokeLinecap="round"
+                                             strokeLinejoin="round"
+                                             strokeWidth="2"
+                                             d="M19 9l-7 7-7-7"
+                                          />
+                                       </svg>
                                     </div>
-                                    <div className="relative">
-                                       <select
-                                          name="brand"
-                                          value={formData.brand}
-                                          onChange={handleInputChange}
-                                          className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm appearance-none cursor-pointer">
-                                          <option value="" disabled>Select Brand</option>
-                                          {availableBrands
-                                             .filter((b) => b !== 'All')
-                                             .map((brand) => (
-                                                <option key={brand} value={brand}>
-                                                   {brand}
-                                                </option>
-                                             ))}
-                                       </select>
-                                       <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-neutral-400">
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                          </svg>
-                                       </div>
-                                    </div>
-                                 </div>
-                                 <div className="space-y-2">
-                                    <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
-                                       MRP (₹)
-                                    </label>
-                                    <input
-                                       required
-                                       type="number"
-                                       name="mrp"
-                                       value={formData.mrp}
-                                       onChange={handleInputChange}
-                                       placeholder="Price in INR"
-                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
-                                    />
-                                 </div>
-                                 <div className="space-y-2">
-                                    <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
-                                       Color
-                                    </label>
-                                    <input
-                                       type="text"
-                                       name="color"
-                                       value={formData.color}
-                                       onChange={handleInputChange}
-                                       placeholder="e.g. Silver"
-                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
-                                    />
-                                 </div>
-                                 <div className="space-y-2 md:col-span-2">
-                                    <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
-                                       Dial Color
-                                    </label>
-                                    <input
-                                       type="text"
-                                       name="dialColor"
-                                       value={formData.dialColor}
-                                       onChange={handleInputChange}
-                                       placeholder="e.g. Deep Blue"
-                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
-                                    />
-                                 </div>
-                                 <div className="space-y-2 md:col-span-2">
-                                    <label className="text-[12px] uppercase tracking-[0.2em] font-bold text-[#505050]">
-                                       Image URL (Or Drop to Right)
-                                    </label>
-                                    <input
-                                       type="url"
-                                       name="image"
-                                       value={formData.image}
-                                       onChange={handleInputChange}
-                                       placeholder="https://..."
-                                       className="w-full bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
-                                    />
                                  </div>
                               </div>
+                           </div>
 
-                              <div className="pt-6">
+                           <form
+                              onSubmit={handleSubmit}
+                              className="space-y-8 flex-1">
+                              <div className="space-y-6">
+                                 {watchItems.map((item, index) => (
+                                    <motion.div
+                                       initial={{ opacity: 0, y: 20 }}
+                                       animate={{ opacity: 1, y: 0 }}
+                                       key={item.id}
+                                       className="relative group p-6 bg-neutral-50 rounded-[1.5rem] border border-neutral-200/60 hover:border-[#c09a74]/40 transition-all duration-300">
+                                       {watchItems.length > 1 && (
+                                          <button
+                                             type="button"
+                                             onClick={() =>
+                                                removeWatchItem(item.id)
+                                             }
+                                             className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white border border-neutral-200 text-neutral-400 hover:text-red-500 hover:border-red-100 shadow-sm flex items-center justify-center transition-all z-10">
+                                             <XIcon size={14} />
+                                          </button>
+                                       )}
+
+                                       <div className="flex flex-col md:flex-row gap-8">
+                                          {/* Item Preview */}
+                                          <div className="w-full md:w-32 h-32 rounded-2xl bg-white border border-neutral-200 overflow-hidden relative flex-shrink-0">
+                                             {item.image ? (
+                                                <>
+                                                   <img
+                                                      src={item.image}
+                                                      alt="Preview"
+                                                      className="w-full h-full object-cover"
+                                                   />
+                                                   <button
+                                                      type="button"
+                                                      onClick={() =>
+                                                         clearImage(item.id)
+                                                      }
+                                                      className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                      <Trash2
+                                                         size={16}
+                                                         className="text-white"
+                                                      />
+                                                   </button>
+                                                </>
+                                             ) : (
+                                                <div className="w-full h-full flex flex-col items-center justify-center text-neutral-300 gap-2">
+                                                   <ImageIcon size={24} />
+                                                   <span className="text-[8px] uppercase tracking-widest font-bold">
+                                                      No Image
+                                                   </span>
+                                                </div>
+                                             )}
+                                          </div>
+
+                                          {/* Item Fields */}
+                                          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                             <div className="space-y-1">
+                                                <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                                   Model Name
+                                                </label>
+                                                <input
+                                                   required
+                                                   type="text"
+                                                   name="modelName"
+                                                   value={item.modelName}
+                                                   onChange={(e) =>
+                                                      handleItemInputChange(
+                                                         item.id,
+                                                         e,
+                                                      )
+                                                   }
+                                                   placeholder="e.g. Maritime Pro"
+                                                   className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
+                                                />
+                                             </div>
+                                             <div className="space-y-1">
+                                                <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                                   MRP (₹)
+                                                </label>
+                                                <input
+                                                   required
+                                                   type="number"
+                                                   name="mrp"
+                                                   value={item.mrp}
+                                                   onChange={(e) =>
+                                                      handleItemInputChange(
+                                                         item.id,
+                                                         e,
+                                                      )
+                                                   }
+                                                   placeholder="Price"
+                                                   className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
+                                                />
+                                             </div>
+                                             <div className="space-y-1">
+                                                <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                                   Color
+                                                </label>
+                                                <input
+                                                   type="text"
+                                                   name="color"
+                                                   value={item.color}
+                                                   onChange={(e) =>
+                                                      handleItemInputChange(
+                                                         item.id,
+                                                         e,
+                                                      )
+                                                   }
+                                                   placeholder="Case Color"
+                                                   className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
+                                                />
+                                             </div>
+                                             <div className="space-y-1">
+                                                <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                                   Dial Color
+                                                </label>
+                                                <input
+                                                   type="text"
+                                                   name="dialColor"
+                                                   value={item.dialColor}
+                                                   onChange={(e) =>
+                                                      handleItemInputChange(
+                                                         item.id,
+                                                         e,
+                                                      )
+                                                   }
+                                                   placeholder="Dial"
+                                                   className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-2.5 focus:outline-none focus:border-[#c09a74] transition-colors text-sm"
+                                                />
+                                             </div>
+                                          </div>
+                                       </div>
+                                    </motion.div>
+                                 ))}
+                              </div>
+
+                              <div className="pt-6 pb-12 flex flex-col md:flex-row gap-4">
+                                 <button
+                                    type="button"
+                                    onClick={addWatchItem}
+                                    className="flex-1 bg-neutral-100 text-neutral-600 py-4 rounded-xl uppercase tracking-widest text-xs font-bold hover:bg-neutral-200 transition-all flex items-center justify-center gap-2">
+                                    <Plus size={16} />
+                                    Add Another
+                                 </button>
                                  <button
                                     type="submit"
                                     disabled={isSubmitting}
-                                    className="w-full bg-black text-white py-4 rounded-xl uppercase tracking-widest text-xs font-bold hover:bg-[#c09a74] transition-all duration-500 shadow-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed">
+                                    className="flex-[2] bg-black text-white py-4 rounded-xl uppercase tracking-widest text-xs font-bold hover:bg-[#c09a74] transition-all duration-500 shadow-xl flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed">
                                     {isSubmitting ? (
                                        <>
                                           <Loader2
                                              size={16}
                                              className="animate-spin"
                                           />
-                                          Saving...
+                                          Saving {watchItems.length}{' '}
+                                          Timepieces...
                                        </>
                                     ) : (
-                                       'Add to Collection'
+                                       `Confirm & Save ${watchItems.length} Items`
                                     )}
                                  </button>
                               </div>
@@ -1022,81 +1336,78 @@ const GalleryPage = () => {
                         </div>
                      </div>
 
-                     {/* RIGHT PANEL: Image Preview / Drag & Drop */}
-                     <div className="bg-white rounded-[2rem] w-full lg:w-1/2 h-64 lg:h-full shadow-2xl relative overflow-hidden p-6 lg:p-8 flex items-center justify-center">
-                        <AnimatePresence mode="wait">
-                           {formData.image ? (
-                              <motion.div
-                                 key="preview"
-                                 initial={{ opacity: 0, scale: 0.95 }}
-                                 animate={{ opacity: 1, scale: 1 }}
-                                 exit={{ opacity: 0 }}
-                                 className="w-full h-full relative group rounded-[1rem] overflow-hidden">
-                                 <img
-                                    src={formData.image}
-                                    alt="Preview"
-                                    className="w-full h-full object-cover"
-                                 />
-                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                                    <button
-                                       onClick={clearImage}
-                                       className="bg-white/90 text-black px-6 py-2 rounded-full text-xs uppercase tracking-widest font-bold hover:bg-[#c09a74] hover:text-white transition-colors">
-                                       Remove Image
-                                    </button>
+                     {/* RIGHT PANEL: Multi-Image Dropzone */}
+                     <div className="bg-neutral-50/50 w-full lg:w-1/3 h-full relative overflow-hidden flex flex-col">
+                        <div className="p-8 md:p-12 h-full flex flex-col">
+                           <div className="mb-6">
+                              <h3 className="text-sm uppercase tracking-widest font-bold text-[#505050]">
+                                 Bulk Import
+                              </h3>
+                              <p className="text-xs text-neutral-400 mt-1">
+                                 Drop multiple images to add them all at once.
+                              </p>
+                           </div>
+
+                           <div
+                              onDragEnter={handleDrag}
+                              onDragLeave={handleDrag}
+                              onDragOver={handleDrag}
+                              onDrop={handleDrop}
+                              className={`flex-1 border-2 border-dashed rounded-[2rem] flex flex-col items-center justify-center transition-all duration-500 ${
+                                 dragActive
+                                    ? 'border-[#c09a74] bg-[#c09a74]/5 scale-[0.98]'
+                                    : 'border-neutral-200 bg-white hover:bg-neutral-50'
+                              }`}>
+                              <input
+                                 type="file"
+                                 className="hidden"
+                                 id="file-upload"
+                                 multiple
+                                 onChange={handleChangeFile}
+                                 accept="image/*"
+                              />
+                              <label
+                                 htmlFor="file-upload"
+                                 className="cursor-pointer flex flex-col items-center justify-center w-full h-full p-8 text-center group">
+                                 <div className="w-16 h-16 rounded-full bg-neutral-50 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-[#c09a74]/10 transition-all duration-500">
+                                    <svg
+                                       className={`w-8 h-8 transition-colors duration-300 ${dragActive ? 'text-[#c09a74]' : 'text-neutral-400'}`}
+                                       fill="none"
+                                       stroke="currentColor"
+                                       viewBox="0 0 24 24">
+                                       <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth="1.5"
+                                          d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                                       />
+                                    </svg>
                                  </div>
-                              </motion.div>
-                           ) : (
-                              <motion.div
-                                 key="dropzone"
-                                 initial={{ opacity: 0 }}
-                                 animate={{ opacity: 1 }}
-                                 exit={{ opacity: 0 }}
-                                 className="w-full h-full">
-                                 <div
-                                    onDragEnter={handleDrag}
-                                    onDragLeave={handleDrag}
-                                    onDragOver={handleDrag}
-                                    onDrop={handleDrop}
-                                    className={`w-full h-full border-2 border-dashed rounded-[1rem] flex flex-col items-center justify-center transition-all duration-300 ${
-                                       dragActive
-                                          ? 'border-[#c09a74] bg-[#c09a74]/10 scale-[0.98]'
-                                          : 'border-neutral-300 bg-neutral-50 hover:bg-neutral-100'
-                                    }`}>
-                                    <input
-                                       type="file"
-                                       className="hidden"
-                                       id="file-upload"
-                                       onChange={handleChangeFile}
-                                       accept="image/*"
-                                    />
-                                    <label
-                                       htmlFor="file-upload"
-                                       className="cursor-pointer flex flex-col items-center justify-center w-full h-full p-8 text-center">
-                                       <svg
-                                          className={`w-12 h-12 mb-4 transition-colors duration-300 ${dragActive ? 'text-[#c09a74]' : 'text-neutral-400'}`}
-                                          fill="none"
-                                          stroke="currentColor"
-                                          viewBox="0 0 24 24">
-                                          <path
-                                             strokeLinecap="round"
-                                             strokeLinejoin="round"
-                                             strokeWidth="1.5"
-                                             d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
-                                          />
-                                       </svg>
-                                       <span className="text-sm uppercase tracking-widest font-bold text-[#505050] mb-2">
-                                          {dragActive
-                                             ? 'Drop it here!'
-                                             : 'Upload Image'}
-                                       </span>
-                                       <span className="text-xs text-neutral-500 font-light">
-                                          Drag and drop or click to browse
-                                       </span>
-                                    </label>
-                                 </div>
-                              </motion.div>
-                           )}
-                        </AnimatePresence>
+                                 <span className="text-sm uppercase tracking-widest font-bold text-[#505050] mb-2">
+                                    {dragActive
+                                       ? 'Drop Timepieces'
+                                       : 'Upload Multiple'}
+                                 </span>
+                                 <span className="text-xs text-neutral-400 font-light max-w-[160px] leading-relaxed">
+                                    Drag and drop images or click to browse
+                                 </span>
+                              </label>
+                           </div>
+
+                           {/* Selected Count Badge */}
+                           <div className="mt-6 p-4 bg-white rounded-2xl border border-neutral-100 flex items-center justify-between">
+                              <span className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
+                                 Pending Upload
+                              </span>
+                              <span className="bg-[#c09a74] text-white text-[10px] font-bold px-3 py-1 rounded-full">
+                                 {
+                                    watchItems.filter((i) => i.imageFile)
+                                       .length
+                                 }{' '}
+                                 Images
+                              </span>
+                           </div>
+                        </div>
                      </div>
                   </motion.div>
                </motion.div>
@@ -1141,37 +1452,38 @@ const GalleryPage = () => {
                   </motion.div>
                </motion.div>
             )}
-         </AnimatePresence>
+        </AnimatePresence>
 
-         {/* Bento Grid */}
-         <motion.div
-            layout
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-[300px] gap-6">
-            <AnimatePresence mode="popLayout">
-               {filteredImages.map((image) => (
-                  <motion.div
-                     layout
-                     key={image.id}
-                     variants={itemVariants}
-                     initial="hidden"
-                     animate="visible"
-                     exit="exit"
-                     onDoubleClick={() =>
-                        selectionMode
-                           ? handleDelete(image.id)
-                           : handleDoubleClick(image.id)
-                     }
-                     onTouchStart={() => handleTouchStart(image.id)}
-                     onTouchEnd={handleTouchEnd}
-                     onClick={() => toggleSelection(image.id)}
-                     className={`relative overflow-hidden rounded-3xl group shadow-sm hover:shadow-2xl transition-all duration-500 cursor-pointer ${image.className} ${
-                        selectedIds.includes(image.id)
-                           ? 'ring-4 ring-[#c09a74] scale-[0.98]'
-                           : ''
-                     } ${image.isSyncing ? 'opacity-70 grayscale-[0.5]' : ''}`}>
+        {/* Bento Grid */}
+         <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+               key={filter}
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0, transition: { duration: 0.12 } }}
+               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 auto-rows-[300px] gap-6">
+               <AnimatePresence initial={false}>
+                  {filteredImages.map((image, index) => (
+                     <motion.div
+                        key={image.id}
+                        variants={itemVariants}
+                        initial="hidden"
+                        animate="visible"
+                        exit="exit"
+                        custom={index}
+                        onDoubleClick={() =>
+                           selectionMode
+                              ? handleDelete(image.id)
+                              : handleDoubleClick(image.id)
+                        }
+                        onTouchStart={() => handleTouchStart(image.id)}
+                        onTouchEnd={handleTouchEnd}
+                        onClick={() => toggleSelection(image.id)}
+                        className={`relative overflow-hidden rounded-3xl group shadow-sm hover:shadow-2xl transition-all duration-500 cursor-pointer ${image.className} ${
+                           selectedIds.includes(image.id)
+                              ? 'ring-4 ring-[#c09a74] scale-[0.98]'
+                              : ''
+                        } ${image.isSyncing ? 'opacity-70 grayscale-[0.5]' : ''}`}>
                      <motion.img
                         src={image.src}
                         alt={image.alt}
@@ -1224,10 +1536,11 @@ const GalleryPage = () => {
                            {image.alt}
                         </p>
                      </div>
-                  </motion.div>
-               ))}
-            </AnimatePresence>
-         </motion.div>
+                     </motion.div>
+                  ))}
+               </AnimatePresence>
+            </motion.div>
+         </AnimatePresence>
 
          {/* Footer */}
          <motion.div
@@ -1257,11 +1570,13 @@ const GalleryPage = () => {
                      exit={{ scale: 0.9, opacity: 0, y: 20 }}
                      className="bg-white rounded-[2.5rem] w-full max-w-4xl max-h-[85vh] overflow-hidden shadow-2xl flex flex-col md:flex-row">
                      {/* Brand Form */}
-                     <div className="flex-1 p-8 md:p-12 overflow-y-auto border-b md:border-b-0 md:border-r border-neutral-100">
+                     <div className="flex-1 p-8 md:p-12 overflow-y-auto custom-scrollbar border-b md:border-b-0 md:border-r border-neutral-100">
                         <div className="flex items-center justify-between mb-8">
                            <h2
                               className="text-2xl font-light italic text-[#c09a74]"
-                              style={{ fontFamily: "'Playfair Display', serif" }}>
+                              style={{
+                                 fontFamily: "'Playfair Display', serif",
+                              }}>
                               Manage Brands
                            </h2>
                            <button
@@ -1271,7 +1586,9 @@ const GalleryPage = () => {
                            </button>
                         </div>
 
-                        <form onSubmit={handleBrandSubmit} className="space-y-6">
+                        <form
+                           onSubmit={handleBrandSubmit}
+                           className="space-y-6">
                            <div className="space-y-2">
                               <label className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
                                  Brand Name
@@ -1315,7 +1632,10 @@ const GalleryPage = () => {
                                  disabled={isAddingBrand}
                                  className="w-full bg-black text-white py-4 rounded-xl uppercase tracking-widest text-xs font-bold hover:bg-[#c09a74] transition-all flex items-center justify-center gap-3 disabled:opacity-50">
                                  {isAddingBrand ? (
-                                    <Loader2 size={16} className="animate-spin" />
+                                    <Loader2
+                                       size={16}
+                                       className="animate-spin"
+                                    />
                                  ) : (
                                     'Create New Brand'
                                  )}
