@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
    X,
@@ -199,17 +199,17 @@ const TemplateCreator = ({ isOpen, onClose, onSave }) => {
                initial={{ opacity: 0 }}
                animate={{ opacity: 1 }}
                exit={{ opacity: 0 }}
-               className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 lg:p-8">
+               className="fixed inset-0 z-[500] flex items-center justify-center bg-black/60 backdrop-blur-md p-3 sm:p-4 lg:p-8">
                <motion.div
                   initial={{ scale: 0.9, opacity: 0, y: 20 }}
                   animate={{ scale: 1, opacity: 1, y: 0 }}
                   exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                  className="bg-white rounded-[2.5rem] w-full max-w-7xl h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+                  className="bg-white rounded-[1.5rem] sm:rounded-[2rem] lg:rounded-[2.5rem] w-full max-w-7xl h-[94dvh] lg:h-[90vh] flex flex-col overflow-hidden shadow-2xl">
                   {/* Header */}
-                  <div className="px-8 py-6 border-b border-neutral-100 flex items-center justify-between">
-                     <div>
+                  <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 border-b border-neutral-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                     <div className="min-w-0">
                         <h2
-                           className="text-2xl font-light italic text-[#c09a74]"
+                           className="text-xl sm:text-2xl font-light italic text-[#c09a74]"
                            style={{ fontFamily: "'Playfair Display', serif" }}>
                            Template Creator
                         </h2>
@@ -217,30 +217,31 @@ const TemplateCreator = ({ isOpen, onClose, onSave }) => {
                            Design your own luxury layout
                         </p>
                      </div>
-                     <div className="flex items-center gap-4">
+                     <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full lg:w-auto">
                         <input
                            type="text"
                            placeholder="Template Name..."
                            value={templateName}
                            onChange={(e) => setTemplateName(e.target.value)}
-                           className="bg-neutral-50 border border-neutral-200 rounded-full px-6 py-2 text-sm focus:outline-none focus:border-[#c09a74] w-64"
+                           className="bg-neutral-50 border border-neutral-200 rounded-full px-4 sm:px-6 py-2 text-sm focus:outline-none focus:border-[#c09a74] w-full lg:w-64"
                         />
                         <button
                            onClick={handleSave}
-                           className="flex items-center gap-2 px-6 py-2 rounded-full bg-black text-white text-xs font-bold uppercase tracking-widest hover:bg-[#c09a74] transition-all shadow-lg">
-                           <Save size={16} /> Save Template
+                           className="flex items-center justify-center gap-2 px-4 sm:px-6 py-2 rounded-full bg-black text-white text-xs font-bold uppercase tracking-widest hover:bg-[#c09a74] transition-all shadow-lg">
+                           <Save size={16} />
+                           <span className="hidden sm:inline">Save Template</span>
                         </button>
                         <button
                            onClick={onClose}
-                           className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-500 hover:bg-neutral-200 transition-colors">
+                           className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-500 hover:bg-neutral-200 transition-colors shrink-0">
                            <X size={20} />
                         </button>
                      </div>
                   </div>
 
-                  <div className="flex-1 flex overflow-hidden">
+                  <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
                      {/* Sidebar */}
-                     <div className="w-80 border-r border-neutral-100 flex flex-col p-6 gap-8 overflow-y-auto custom-scrollbar">
+                     <div className="w-full lg:w-80 border-b lg:border-b-0 lg:border-r border-neutral-100 flex flex-col p-4 sm:p-6 gap-6 sm:gap-8 overflow-y-auto custom-scrollbar">
                         <div className="space-y-4">
                            <h3 className="text-[10px] uppercase tracking-widest font-bold text-neutral-400">
                               Components
@@ -252,11 +253,11 @@ const TemplateCreator = ({ isOpen, onClose, onSave }) => {
                                  <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center group-hover:bg-[#c09a74] group-hover:text-white transition-colors">
                                     <ImageIcon size={20} />
                                  </div>
-                                 <div>
+                                 <div className="min-w-0">
                                     <span className="block text-sm font-bold">
                                        Image Placeholder
                                     </span>
-                                    <span className="text-[10px] text-neutral-500">
+                                    <span className="hidden sm:block text-[10px] text-neutral-500">
                                        Drag to position watch images
                                     </span>
                                  </div>
@@ -267,11 +268,11 @@ const TemplateCreator = ({ isOpen, onClose, onSave }) => {
                                  <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center group-hover:bg-[#c09a74] group-hover:text-white transition-colors">
                                     <Type size={20} />
                                  </div>
-                                 <div>
+                                 <div className="min-w-0">
                                     <span className="block text-sm font-bold">
                                        Text Element
                                     </span>
-                                    <span className="text-[10px] text-neutral-500">
+                                    <span className="hidden sm:block text-[10px] text-neutral-500">
                                        Add titles or descriptions
                                     </span>
                                  </div>
@@ -282,11 +283,11 @@ const TemplateCreator = ({ isOpen, onClose, onSave }) => {
                                  <div className="w-10 h-10 rounded-xl bg-neutral-100 flex items-center justify-center group-hover:bg-[#c09a74] group-hover:text-white transition-colors">
                                     <ArrowRight size={20} />
                                  </div>
-                                 <div>
+                                 <div className="min-w-0">
                                     <span className="block text-sm font-bold">
                                        Arrow Element
                                     </span>
-                                    <span className="text-[10px] text-neutral-500">
+                                    <span className="hidden sm:block text-[10px] text-neutral-500">
                                        Add directional arrows
                                     </span>
                                  </div>
@@ -483,7 +484,7 @@ const TemplateCreator = ({ isOpen, onClose, onSave }) => {
                      </div>
 
                      {/* Canvas */}
-                     <div className="flex-1 bg-neutral-50 p-12 overflow-y-auto custom-scrollbar flex justify-center">
+                     <div className="flex-1 bg-neutral-50 p-4 sm:p-8 lg:p-12 overflow-y-auto custom-scrollbar flex justify-center">
                         <div
                            className="bg-white shadow-2xl relative overflow-hidden"
                            style={{

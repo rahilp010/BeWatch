@@ -99,8 +99,8 @@ const LandingPage = () => {
                }}
                className="fixed bottom-2 lg:top-8 left-1/2 z-50 -translate-x-1/2 ">
                <div
-                  className={`flex items-center gap-6 rounded-full border px-8 py-4 backdrop-blur-2xl transition-all duration-500 hover:scale-105 border-[#505050] bg-white/50 text-gray-800 shadow-[0_8px_32px_0_rgba(31,38,135,0.15)]`}>
-                  <div className="flex items-center gap-8 sm:gap-10">
+                  className={`flex items-center gap-4 rounded-full border px-4 py-3 sm:gap-6 sm:px-8 sm:py-4 backdrop-blur-2xl transition-all duration-500 hover:scale-105 border-[#505050] bg-white/50 text-gray-800 shadow-[0_8px_32px_0_rgba(31,38,135,0.15)]`}>
+                  <div className="flex items-center gap-5 sm:gap-8">
                      <FaInstagram
                         className={`h-5 w-5 cursor-pointer transition-all hover:scale-125 hover:text-[#c09a74]
                         }`}
@@ -124,7 +124,9 @@ const LandingPage = () => {
                </div>
             </motion.div>
             <div className="flex-1 flex justify-end">
-               <button className="flex flex-col items-end space-y-1 lg:space-y-2 group">
+               <button
+                  aria-label="Open menu"
+                  className="flex flex-col items-end space-y-1 lg:space-y-2 group">
                   <span className="w-6 lg:w-10 h-[2px] bg-black block transition-all duration-300 group-hover:w-10 lg:group-hover:w-12"></span>
                   <span className="w-4 lg:w-7 h-[2px] bg-black block transition-all duration-300 group-hover:w-10 lg:group-hover:w-12"></span>
                   <span className="w-5 lg:w-9 h-[2px] bg-black block transition-all duration-300 group-hover:w-10 lg:group-hover:w-12"></span>
@@ -186,7 +188,7 @@ const LandingPage = () => {
                </motion.button>
 
                {/* Text Content - Scaled down for mobile fit */}
-               <div className="absolute right-8 md:right-20 ">
+               <div className="absolute right-4 sm:right-6 md:right-20">
                   <motion.h2
                      variants={fadeUp}
                      className="text-2xl md:text-2xl lg:text-3xl font-bold uppercase tracking-[0.2em] leading-snug text-[#c09a74] mb-3 lg:mb-6">

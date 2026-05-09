@@ -1282,40 +1282,46 @@ const BuilderPage = () => {
          </AnimatePresence>
 
          {/* Navigation Bar */}
-         <nav className="bg-white border-b border-neutral-200 px-6 py-4 flex items-center justify-between sticky top-0 z-[100]">
-            <div className="flex items-center gap-4 md:gap-6">
+         <nav className="bg-white border-b border-neutral-200 px-4 sm:px-6 py-4 flex items-center justify-between sticky top-0 z-[100] gap-4">
+            <div className="flex items-center gap-3 sm:gap-4 md:gap-6 min-w-0">
                <Link
                   to="/gallery"
-                  className="text-neutral-500 hover:text-black transition-colors">
+                  aria-label="Back to gallery"
+                  className="text-neutral-500 hover:text-black transition-colors shrink-0">
                   <ArrowLeft size={18} md:size={20} />
                </Link>
                <h1
-                  className="text-lg md:text-xl font-light tracking-tight italic text-[#c09a74]"
+                  className="hidden sm:block text-lg md:text-xl font-light tracking-tight italic text-[#c09a74]"
                   style={{ fontFamily: "'Playfair Display', serif" }}>
                   Builder
                </h1>
             </div>
 
-            <div className="flex items-center gap-2 md:gap-4">
+            <div className="flex items-center gap-2 md:gap-4 shrink-0">
                {currentStep > 1 && (
                   <button
                      onClick={() => setCurrentStep(currentStep - 1)}
-                     className="px-4 py-2 md:px-6 md:py-2 rounded-full border border-neutral-200 text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-neutral-50 transition-all">
-                     Back
+                     className="px-3 py-2 md:px-6 md:py-2 rounded-full border border-neutral-200 text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-neutral-50 transition-all flex items-center gap-2">
+                     <ArrowLeft size={14} />
+                     <span className="hidden sm:inline">Back</span>
                   </button>
                )}
                {currentStep < 3 ? (
                   <button
                      onClick={() => setCurrentStep(currentStep + 1)}
-                     className="px-6 py-2 md:px-8 md:py-2 rounded-full bg-black text-white text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-[#c09a74] transition-all shadow-lg flex items-center gap-2">
-                     Next <ChevronRight size={14} className="hidden md:block" />
+                     className="px-4 py-2 md:px-8 md:py-2 rounded-full bg-black text-white text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-[#c09a74] transition-all shadow-lg flex items-center gap-2 justify-center">
+                     <span className="hidden sm:inline">Next</span>
+                     <ChevronRight size={14} />
                   </button>
                ) : (
                   <button
                      onClick={handleGeneratePDF}
                      disabled={isGenerating}
-                     className="px-6 py-2 md:px-8 md:py-2 rounded-full bg-[#c09a74] text-white text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg flex items-center gap-2 disabled:opacity-50">
-                     {isGenerating ? 'Wait...' : 'Export'}
+                     className="px-4 py-2 md:px-8 md:py-2 rounded-full bg-[#c09a74] text-white text-[10px] md:text-xs font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg flex items-center gap-2 justify-center disabled:opacity-50">
+                     <FileDown size={14} />
+                     <span className="hidden sm:inline">
+                        {isGenerating ? 'Wait...' : 'Export'}
+                     </span>
                   </button>
                )}
             </div>
@@ -1348,7 +1354,7 @@ const BuilderPage = () => {
                            <StepIcon size={16} md:size={20} />
                         </div>
                         <span
-                           className={`text-[8px] md:text-[10px] uppercase tracking-[0.1em] md:tracking-[0.2em] font-bold ${
+                           className={`hidden sm:block text-[8px] md:text-[10px] uppercase tracking-[0.1em] md:tracking-[0.2em] font-bold ${
                               currentStep >= step.id
                                  ? 'text-[#c09a74]'
                                  : 'text-neutral-400'
@@ -1365,7 +1371,7 @@ const BuilderPage = () => {
          <main className="max-w-7xl mx-auto px-6 pb-24">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                {/* Controls Panel */}
-               <div className="lg:col-span-4 space-y-6 sticky top-28">
+               <div className="lg:col-span-4 space-y-6 lg:sticky lg:top-28">
                   {currentStep === 1 && (
                      <div className="bg-white rounded-3xl p-8 border border-neutral-200 shadow-sm">
                         <div className="flex items-center justify-between gap-4 mb-6">
@@ -1380,8 +1386,11 @@ const BuilderPage = () => {
                               </button> */}
                               <button
                                  onClick={() => setIsAddImageModalOpen(true)}
-                                 className="px-4 py-2 rounded-full bg-black text-white text-[10px] uppercase tracking-widest font-bold hover:bg-[#c09a74] transition-colors">
-                                 Add Image
+                                 className="px-3 py-2 rounded-full bg-black text-white text-[10px] uppercase tracking-widest font-bold hover:bg-[#c09a74] transition-colors flex items-center gap-2">
+                                 <Plus size={14} />
+                                 <span className="hidden sm:inline">
+                                    Add Image
+                                 </span>
                               </button>
                            </div>
                         </div>
@@ -1502,7 +1511,10 @@ const BuilderPage = () => {
                                     setIsGalleryPickerOpen(true);
                                  }}
                                  className="text-[10px] px-3 py-1.5 rounded-full border border-dashed border-neutral-300 text-neutral-400 hover:border-[#c09a74] hover:text-[#c09a74] transition-colors flex items-center gap-1">
-                                 <Plus size={10} /> Add
+                                 <Plus size={10} />
+                                 <span className="hidden sm:inline">
+                                    Add
+                                 </span>
                               </button>
                            </div>
                         </div>

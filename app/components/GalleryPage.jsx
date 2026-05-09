@@ -11,7 +11,6 @@ import {
    MoreHorizontal,
 } from 'lucide-react';
 import {
-   insertWatch,
    insertWatches,
    uploadImage,
    deleteWatches,
@@ -226,7 +225,7 @@ const GalleryPage = () => {
          const staticItems = prev.filter(
             (img) => typeof img.id === 'string' && img.id.startsWith('static-'),
          );
-         return [...mapped, ...staticItems];
+         return [...staticItems, ...mapped];
       });
    }, [watchData]);
 
@@ -364,13 +363,13 @@ const GalleryPage = () => {
       queryClient.setQueryData(watchesQueryKey, (current) => {
          const items = current?.items ?? [];
          return {
-            items: [...optimisticWatches, ...items],
+            items: [...items, ...optimisticWatches],
             count: (current?.count ?? 0) + optimisticWatches.length,
          };
       });
 
       // Update Local State
-      setImages((prev) => [...optimisticWatches, ...prev]);
+      setImages((prev) => [...prev, ...optimisticWatches]);
       setSelectionMode(false);
       setSelectedIds([]);
       setIsModalOpen(false);
@@ -417,7 +416,7 @@ const GalleryPage = () => {
          );
 
          // 3. Map DB results back to temp IDs and update cache
-         queryClient.setQueryData(watchesQueryKey, (current) => {
+            queryClient.setQueryData(watchesQueryKey, (current) => {
             if (!current) return current;
             const items = current.items ?? [];
             let updatedItems = [...items];
@@ -474,7 +473,9 @@ const GalleryPage = () => {
          }
          // Restore previous images state or just clear the syncing ones
          setImages((prev) =>
-            prev.filter((img) => !optimisticWatches.find((o) => o.id === img.id)),
+            prev.filter(
+               (img) => !optimisticWatches.find((o) => o.id === img.id),
+            ),
          );
          setNotification({
             type: 'error',
@@ -708,15 +709,16 @@ const GalleryPage = () => {
          <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full flex justify-between items-center mb-2">
-            <div className="flex items-center gap-6">
+            className="w-full flex justify-between items-center mb-2 gap-4">
+            <div className="flex items-center gap-3 sm:gap-6">
                <Link
                   to="/"
+                  aria-label="Back to home"
                   className="flex items-center space-x-2 text-[#505050] hover:text-[#c09a74] transition-colors duration-300 group">
                   <span className="text-xl group-hover:-translate-x-1 transition-transform duration-300">
                      ←
                   </span>
-                  <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
+                  <span className="hidden sm:inline uppercase tracking-widest text-[10px] md:text-sm font-bold">
                      Back
                   </span>
                </Link>
@@ -738,27 +740,28 @@ const GalleryPage = () => {
                )}
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
                {!selectionMode && (
                   <button
                      onClick={() => setIsTemplateCreatorOpen(true)}
-                     className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400 group">
+                     aria-label="Open template creator"
+                     className="flex items-center justify-center gap-2 px-3 py-2 sm:px-4 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400 group">
                      <span className="text-lg font-light transition-transform duration-300 group-hover:scale-110">
                         <Layout size={18} />
                      </span>
-                     {/* <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
+                     <span className="hidden sm:inline uppercase tracking-widest text-[10px] md:text-sm font-bold">
                         Add Templates
-                     </span> */}
+                     </span>
                   </button>
                )}
 
                <button
                   onClick={() => setIsModalOpen(true)}
-                  className="flex items-center space-x-2 px-4 py-2 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400">
+                  className="flex items-center justify-center gap-2 px-3 py-2 sm:px-4 md:px-5 md:py-2 rounded-full bg-white border border-[#c09a74] text-[#c09a74] hover:bg-[#c09a74] hover:text-white cursor-pointer transition-all duration-400">
                   <span className="text-lg font-light transition-transform duration-300 group-hover:rotate-90">
                      <Plus size={18} />
                   </span>
-                  <span className="uppercase tracking-widest text-[10px] md:text-sm font-bold">
+                  <span className="hidden sm:inline uppercase tracking-widest text-[10px] md:text-sm font-bold">
                      Add Watch
                   </span>
                </button>
@@ -778,7 +781,7 @@ const GalleryPage = () => {
                animate={{ opacity: 1, x: 0 }}
                className="w-full md:w-auto flex flex-col md:flex-row md:items-end relative">
                <h1
-                  className="text-4xl md:text-5xl lg:text-7xl tracking-tight font-light italic text-[#c09a74]"
+                  className="text-3xl sm:text-4xl md:text-5xl lg:text-7xl tracking-tight font-light italic text-[#c09a74]"
                   style={{ fontFamily: "'Playfair Display', serif" }}>
                   {selectionMode ? 'Select Items' : 'Watch Gallery'}
                </h1>
@@ -791,7 +794,7 @@ const GalleryPage = () => {
                initial={{ opacity: 0, y: 20 }}
                animate={{ opacity: 1, y: 0 }}
                aria-busy={isFilterPending}
-               className={`flex flex-wrap items-center gap-3 transition-opacity duration-150 ${
+               className={`flex flex-nowrap md:flex-wrap items-center gap-3 overflow-x-auto pb-2 md:pb-0 custom-scrollbar transition-opacity duration-150 ${
                   isFilterPending ? 'opacity-80' : 'opacity-100'
                }`}>
                {/* Show first 5 pills including "All" */}
